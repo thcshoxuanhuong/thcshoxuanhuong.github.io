@@ -413,6 +413,12 @@ function webCheckKey(say){
         var post = opt && String(opt.method || "").toUpperCase() === "POST";
         var need = (u.indexOf("api=kq&from=") > 0 && u.indexOf("from=999999999") < 0) || (post && u.indexOf("api=de") > 0);
         if(need) url = u + "&key=" + encodeURIComponent(webKey());
+        /* không chờ Google quá 15 giây */
+        if(typeof AbortController !== "undefined" && !(opt && opt.signal)){
+          var ctl = new AbortController(); opt = Object.assign({}, opt || {}, { signal: ctl.signal });
+          var tm = setTimeout(function(){ ctl.abort(); }, 15000);
+          return f0.call(window, url, opt).then(function(r){ clearTimeout(tm); return r; }, function(e){ clearTimeout(tm); throw e; });
+        }
       }
     }catch(e){}
     return f0.call(window, url, opt);
@@ -568,7 +574,7 @@ function webLoadDs(ma, lop){
     })
     .catch(function(){
       webDsFail[k] = (webDsFail[k] || 0) + 1;
-      if(webDsFail[k] < 3) return "RETRY";
+      if(webDsFail[k] < 2) return "RETRY";
       webDsDone[k] = 1; return " · (không kết nối được máy chủ – em gõ họ tên)";
     })
     .then(function(note){
