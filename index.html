@@ -217,7 +217,7 @@ td.num{text-align:center;white-space:nowrap}
       <div class="field"><label for="inCode">Mã bài</label><input id="inCode" class="codein" inputmode="numeric" autocomplete="off" maxlength="7" placeholder="000 000"></div>
       <div class="field" id="stt2Box"><label for="inStt2">Số thứ tự của em</label><input id="inStt2" type="number" min="1" max="60" placeholder="VD: 12"></div>
     </div>
-    <div class="row" id="tenBox"><div class="field" style="flex:1"><label for="inTen">Họ và tên của em</label><input id="inTen" autocomplete="name" maxlength="50" placeholder="VD: Nguyễn Văn An"></div></div>
+    <div class="row" id="tenBox"><div class="field" style="flex:1;min-width:260px"><label for="inTen">Họ và tên của em</label><input id="inTen" autocomplete="name" maxlength="50" placeholder="VD: Nguyễn Văn An"></div></div>
     <div class="codeinfo" id="codeInfo"></div>
     <div id="pick2" class="hide"></div>
     <div style="margin-top:14px"><button class="big" id="btnJoin" disabled>Vào làm bài ▶</button></div>
@@ -430,7 +430,7 @@ function webAskKey(){
 })();
 </script>
 <style>
-#inTen{font-size:20px}
+#inTen{font-size:20px;width:100%;box-sizing:border-box}
 .websend{margin-top:14px;padding:10px 14px;border-radius:12px;font-size:17px;font-weight:600}
 .websend.wait{background:#fff7e0;color:#8a5a00}
 .websend.ok{background:#e6f7ec;color:#126b34}
@@ -559,9 +559,10 @@ function checkJoin(){
 }
 function joinStt(){ return checkJoin.hasList ? PICK.pick2 : +$("inStt2").value; }
 function joinReady(){ $("btnJoin").disabled = !(JOIN && joinStt() > 0 && (checkJoin.hasList || webTen().length >= 4)); }
-var webDsBusy = "";
+var webDsBusy = "", webDsTried = {};
 function webLoadDs(ma, lop){
-  if((window.DSLOP[lop] || []).length || webDsBusy === lop || !window.WEBAPI || typeof fetch === "undefined") return;
+  if((window.DSLOP[lop] || []).length || webDsBusy || webDsTried[ma + lop] || !SYNC.candidates().length || typeof fetch === "undefined") return;
+  webDsTried[ma + lop] = 1;
   webDsBusy = lop; $("tenBox").classList.add("hide");
   var info = $("codeInfo"), txt = info.textContent; info.textContent = txt + " · ⏳ đang tải danh sách lớp…";
   SYNC.ready().then(function(url){ if(!url) throw 0; return fetch(url + "?api=ds&ma=" + ma, { cache:"no-store" }); })
