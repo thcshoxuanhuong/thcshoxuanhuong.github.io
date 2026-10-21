@@ -411,7 +411,20 @@ function webAskKey(){
   var k = window.prompt("Nhập MÃ BÍ MẬT giáo viên (giống dòng MAT_KHAU trong Apps Script):", webKey());
   if(k === null) return;
   try{ localStorage.setItem(KWEBKEY, k.trim()); }catch(e){}
+  webCheckKey(true);
   if(window.SYNC){ SYNC.pull(true); } if(typeof webLoadAll === "function") webLoadAll();
+}
+var WEBKEYOK = null;
+function webCheckKey(say){
+  if(!window.SYNC || typeof fetch === "undefined") return;
+  if(!webKey()){ WEBKEYOK = false; if(window.SYNC) SYNC.pull(true); return; }
+  SYNC.ready().then(function(url){ if(!url) throw 0; return fetch(url + "?api=ds&key=" + encodeURIComponent(webKey()), { cache:"no-store" }); })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      WEBKEYOK = !!(d && d.ok && d.all);
+      if(say && typeof toast === "function") toast(WEBKEYOK ? "✅ Mã bí mật đúng. Thầy cô có thể tạo mã kiểm tra." : "❌ Mã bí mật chưa đúng. Bấm 🔑 để nhập lại (giống dòng MAT_KHAU trong Code.gs).");
+      SYNC.pull(true);
+    }).catch(function(){});
 }
 /* tự gắn mã bí mật vào các yêu cầu cần quyền giáo viên */
 (function(){
@@ -559,17 +572,33 @@ function checkJoin(){
 }
 function joinStt(){ return checkJoin.hasList ? PICK.pick2 : +$("inStt2").value; }
 function joinReady(){ $("btnJoin").disabled = !(JOIN && joinStt() > 0 && (checkJoin.hasList || webTen().length >= 4)); }
-var webDsBusy = "", webDsTried = {};
+var webDsBusy = "", webDsDone = {}, webDsFail = {};
 function webLoadDs(ma, lop){
-  if((window.DSLOP[lop] || []).length || webDsBusy || webDsTried[ma + lop] || !SYNC.candidates().length || typeof fetch === "undefined") return;
-  webDsTried[ma + lop] = 1;
+  var k = ma + lop;
+  if((window.DSLOP[lop] || []).length || webDsBusy || webDsDone[k] || !SYNC.candidates().length || typeof fetch === "undefined") return;
   webDsBusy = lop; $("tenBox").classList.add("hide");
   var info = $("codeInfo"), txt = info.textContent; info.textContent = txt + " · ⏳ đang tải danh sách lớp…";
   SYNC.ready().then(function(url){ if(!url) throw 0; return fetch(url + "?api=ds&ma=" + ma, { cache:"no-store" }); })
     .then(function(r){ return r.json(); })
-    .then(function(d){ if(d && d.lop === lop && d.ds && d.ds.length){ window.DSLOP[lop] = d.ds; } })
-    .catch(function(){})
-    .then(function(){ webDsBusy = ""; if(JOIN && JOIN.lop === lop){ info.textContent = txt; checkJoin.lop = null; checkJoin(); } });
+    .then(function(d){
+      webDsDone[k] = 1;
+      if(d && d.lop === lop && d.ds && d.ds.filter(Boolean).length){ window.DSLOP[lop] = d.ds; return ""; }
+      if(d && d.ok) return " · (lớp " + lop + " chưa có danh sách – em gõ họ tên)";
+      if(d && d.err === "het") return " · (mã đã quá 24 giờ – em gõ họ tên)";
+      return " · (máy chủ chưa có mã này – em gõ họ tên)";
+    })
+    .catch(function(){
+      webDsFail[k] = (webDsFail[k] || 0) + 1;
+      if(webDsFail[k] < 3) return "RETRY";
+      webDsDone[k] = 1; return " · (không kết nối được máy chủ – em gõ họ tên)";
+    })
+    .then(function(note){
+      webDsBusy = "";
+      if(!(JOIN && JOIN.lop === lop)) return;
+      info.textContent = txt;
+      if(note === "RETRY"){ setTimeout(function(){ webLoadDs(ma, lop); }, 3000); return; }
+      checkJoin.lop = null; checkJoin(); if(note) $("codeInfo").textContent += note;
+    });
 }
 function webLoadAll(){
   if(!webKey() || typeof fetch === "undefined") return;
@@ -579,6 +608,7 @@ function webLoadAll(){
     .catch(function(){});
 }
 $("btnTeacher").addEventListener("click", function(){ setTimeout(webLoadAll, 800); });
+$("btnLogin").addEventListener("click", function(){ setTimeout(function(){ if($("scReport").classList.contains("hide")) return; if(!webKey()) webAskKey(); else webCheckKey(false); }, 1200); });
 $("inTen").addEventListener("input", function(){ try{ localStorage.setItem(KWEBTEN, $("inTen").value); }catch(e){} joinReady(); });
 try{ $("inTen").value = localStorage.getItem(KWEBTEN) || ""; }catch(e){}
 $("inCode").addEventListener("input", function(){
@@ -1484,7 +1514,7 @@ var SYNC = (function(){
     var el = $("syncInfo"); if(!el) return;
     el.className = "syncinfo " + (ok ? "on" : "off");
     el.innerHTML = ok
-      ? "🟢 Đã kết nối Google Trang tính · đang nhận kết quả từ học sinh · máy chủ đã có <b>" + total + "</b> câu trả lời · tự cập nhật mỗi 5 giây"
+      ? "🟢 Đã kết nối Google Trang tính · đang nhận kết quả từ học sinh · máy chủ đã có <b>" + total + "</b> câu trả lời · tự cập nhật mỗi 5 giây" + (WEBKEYOK === false ? ' · <b style="color:#b42318">🔒 mã bí mật chưa đúng/chưa nhập</b>' : WEBKEYOK ? " · 🔑 mã bí mật đúng" : "") + ' <button class="webkeybtn" onclick="webAskKey()">🔑 ' + (webKey() ? "Đổi mã bí mật" : "Nhập mã bí mật") + '</button>'
       : (err === "key" ? "🔒 Cần <b>mã bí mật</b> giáo viên để tải kết quả từ Google Trang tính." : (window.WEBAPI && /^https:/.test(window.WEBAPI) ? "⚪ Chưa kết nối được Google Trang tính (kiểm tra mạng Internet hoặc địa chỉ trong ketnoi.js)." : "⚪ Chưa cấu hình: hãy dán địa chỉ Apps Script vào tệp <b>ketnoi.js</b>.")) + ' <button class="webkeybtn" onclick="webAskKey()">🔑 Nhập mã bí mật</button>';
   }
   function push(rec){ var q = sget(KOUT, []); q.push(rec); sset(KOUT, q); }
@@ -1542,8 +1572,8 @@ function sendCfg(list){
     if(!url) return false;
     return fetch(url + "?api=de", { method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" },
       body: list.map(function(x){ return JSON.stringify({ ma: ("000000"+x.code).slice(-6), tg: x.tg, vp: x.vpmax, n: x.n, dk: x.dk, lop: x.lop }); }).join("\n") })
-      .then(function(r){ return r.json(); }).then(function(d){ return !!(d && d.ok); });
-  }).catch(function(){ return false; });
+      .then(function(r){ return r.json(); }).then(function(d){ window._cfgErr = d && d.err; return !!(d && d.ok); });
+  }).catch(function(){ window._cfgErr = "net"; return false; });
 }
 function todayCodes(){ var dk = dayKey(); return sget(KCODES, []).filter(function(x){ return x.dk === dk; }); }
 document.addEventListener("click", function(e){
@@ -1559,7 +1589,7 @@ document.addEventListener("click", function(e){
   showCodeBox(code, cls, chk.label + " · " + tg + " phút"); renderCodes();
   sendCfg([item]).then(function(ok){
     toast(ok ? "Đã tạo mã kiểm tra " + fmtCode(code) + " · " + tg + " phút · rời bài tối đa " + vpmax + " lần."
-             : "⚠️ Chưa lưu được lên Google Trang tính (kiểm tra mạng / mã bí mật): học sinh sẽ làm theo mặc định 15 phút. Bấm Tạo mã lại sau khi kết nối.");
+             : (window._cfgErr === "key" ? "🔒 Chưa lưu được mã: mã bí mật chưa đúng hoặc chưa nhập. Bấm nút 🔑 trong khung trạng thái, nhập mã bí mật rồi bấm Tạo mã lại." : "⚠️ Chưa lưu được lên Google Trang tính (kiểm tra mạng Internet). Bấm Tạo mã lại sau khi kết nối."));
   });
 }, true);
 var _renderCodes = renderCodes;
