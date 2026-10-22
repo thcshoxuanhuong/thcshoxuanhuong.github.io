@@ -1647,7 +1647,7 @@ document.addEventListener("click", function(e){
     $("exIntro").innerHTML = '<div class="ex-card"><div class="ex-ic">📝</div><h2>Bài kiểm tra</h2>'
       + '<div class="ex-who">👤 Lớp ' + esc(EXAM.lop) + ' · ' + EXAM.stt + (name ? '. ' + esc(name) : '') + '</div>'
       + '<div class="ex-bai">' + esc(JOIN.label) + '</div>'
-      + '<ul class="ex-rules"><li>📋 Đề gồm <b>25 câu</b>: 10 nhận biết, 9 thông hiểu, 6 vận dụng. Thứ tự câu hỏi và đáp án được đảo riêng cho từng em.</li><li>⏱️ Thời gian làm bài: <b>' + EXAM.tg + ' phút</b>.</li>'
+      + '<ul class="ex-rules"><li>🧹 Nếu trình duyệt hiện bảng <b>Restore pages / Khôi phục trang</b>, em bấm dấu <b>✕</b> để đóng bảng <b>trước khi</b> bắt đầu.</li><li>📋 Đề gồm <b>25 câu</b>: 10 nhận biết, 9 thông hiểu, 6 vận dụng. Thứ tự câu hỏi và đáp án được đảo riêng cho từng em.</li><li>⏱️ Thời gian làm bài: <b>' + EXAM.tg + ' phút</b>.</li>'
       + '<li>🖥️ Bài làm ở chế độ <b>toàn màn hình</b>. Em <b>không được</b> chuyển sang cửa sổ, trang web hay phần mềm khác.</li>'
       + '<li>⚠️ Nếu em rời khỏi bài <b>' + EXAM.max + ' lần</b>, bài sẽ <b>tự động nộp</b>.</li>'
       + '<li>✏️ Mỗi câu chỉ chọn <b>một lần</b>. Em đọc kĩ trước khi chọn nhé.</li></ul>'
@@ -1713,7 +1713,12 @@ function violation(why){
 }
 $("exWarn").addEventListener("click", function(e){ if(e.target.id === "btnExBackIn"){ goFull(); EXAM.lastV = Date.now(); $("exWarn").classList.add("hide"); } });
 document.addEventListener("visibilitychange", function(){ if(document.hidden) violation("tab"); });
-window.addEventListener("blur", function(){ setTimeout(function(){ if(!document.hasFocus()) violation("blur"); }, 300); });
+/* mất tập trung (bấm vào bảng thông báo của trình duyệt…): nhắc trước, chỉ tính rời bài nếu sau 4 giây vẫn chưa quay lại bài */
+window.addEventListener("blur", function(){
+  if(!EXAM.on) return;
+  setTimeout(function(){ if(EXAM.on && !document.hasFocus() && !document.hidden && typeof toast === "function") toast("⚠️ Em bấm chuột vào bài làm ngay, nếu không sẽ bị tính rời khỏi bài."); }, 300);
+  setTimeout(function(){ if(!document.hasFocus()) violation("blur"); }, 4000);
+});
 ["fullscreenchange", "webkitfullscreenchange"].forEach(function(ev){ document.addEventListener(ev, function(){ if(!fsEl()) violation("fs"); }); });
 
 /* ---- chặn sao chép đề, chuột phải, phím tắt ---- */
