@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chẩn đoán kết nối</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1d2433;--muted:#5b6475;--ok:#126b34;--okbg:#e6f7ec;--bad:#b42318;--badbg:#fdecea;--wait:#8a5a00;--waitbg:#fff7e0;--line:#d9dee7;--brand:#1f4e79}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#14171c;--card:#1d2128;--ink:#e8ebf0;--muted:#9aa3b2;--ok:#7ad69a;--okbg:#173022;--bad:#ff8a80;--badbg:#3a1a18;--wait:#f3c969;--waitbg:#3a2f12;--line:#333a45;--brand:#7fb2e5}}
+:root[data-theme="dark"]{--bg:#14171c;--card:#1d2128;--ink:#e8ebf0;--muted:#9aa3b2;--ok:#7ad69a;--okbg:#173022;--bad:#ff8a80;--badbg:#3a1a18;--wait:#f3c969;--waitbg:#3a2f12;--line:#333a45;--brand:#7fb2e5}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:20px 16px}
+h1{font-size:24px;color:var(--brand);margin:0 0 6px}
+p{color:var(--muted);margin:0 0 16px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+input{font-size:22px;letter-spacing:3px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;width:150px;background:var(--card);color:var(--ink)}
+button{font-size:18px;padding:10px 18px;border-radius:10px;border:0;background:var(--brand);color:#fff;cursor:pointer}
+.step{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.step b{display:block}
+.st{display:inline-block;margin-top:4px;padding:2px 10px;border-radius:8px;font-weight:600}
+.ok{background:var(--okbg);color:var(--ok)}.bad{background:var(--badbg);color:var(--bad)}.wait{background:var(--waitbg);color:var(--wait)}
+.small{font-size:14px;color:var(--muted);word-break:break-all;margin-top:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🩺 Chẩn đoán kết nối</h1>
+  <p>Mở trang này trên máy học sinh bị lỗi, nhập mã kiểm tra thầy vừa tạo rồi bấm Kiểm tra. Chụp màn hình kết quả gửi cho người hỗ trợ.</p>
+  <div class="row"><input id="ma" inputmode="numeric" maxlength="7" placeholder="Mã 6 số"><button id="go">Kiểm tra</button></div>
+  <div id="out"></div>
+</div>
+<script src="ketnoi.js"></script>
+<script>
+var out = document.getElementById("out");
+function box(title){ var d = document.createElement("div"); d.className = "step"; d.innerHTML = "<b>" + title + "</b><span class='st wait'>⏳ đang thử…</span><div class='small'></div>"; out.appendChild(d); return d; }
+function done(d, ok, msg, extra){ var s = d.querySelector(".st"); s.className = "st " + (ok ? "ok" : "bad"); s.textContent = (ok ? "✅ " : "❌ ") + msg; if(extra) d.querySelector(".small").textContent = extra; }
+function timed(url, opt, ms){
+  var ctl = new AbortController(), t0 = performance.now(), tm = setTimeout(function(){ ctl.abort(); }, ms);
+  return fetch(url, Object.assign({ cache:"no-store", signal: ctl.signal }, opt || {}))
+    .then(function(r){ clearTimeout(tm); return { r:r, s:((performance.now()-t0)/1000).toFixed(1) }; },
+          function(e){ clearTimeout(tm); throw { e:e, s:((performance.now()-t0)/1000).toFixed(1) }; });
+}
+document.getElementById("go").onclick = function(){
+  out.innerHTML = "";
+  var ma = document.getElementById("ma").value.replace(/\D/g, "");
+  var api = String(window.WEBAPI || "");
+  var info = box("0. Thông tin máy");
+  done(info, true, "Giờ trên máy: " + new Date().toLocaleString("vi-VN"), navigator.userAgent);
+  var b1 = box("1. Kết nối tới trang web (GitHub)");
+  timed(location.href.split("#")[0], { method:"HEAD" }, 20000).then(function(x){
+    var sv = Date.parse(x.r.headers.get("Date")), lech = sv ? Math.round((Date.now() - sv)/60000) : "?";
+    done(b1, true, "OK sau " + x.s + " giây", "Giờ máy chủ: " + (sv ? new Date(sv).toLocaleString("vi-VN") : "?") + " · máy này lệch " + lech + " phút");
+  }, function(x){ done(b1, false, "Lỗi sau " + x.s + " giây", String(x.e)); })
+  .then(function(){
+    var b2 = box("2. Kết nối tới Google Apps Script");
+    if(!/^https:\/\/script\.google/.test(api)){ done(b2, false, "ketnoi.js chưa có địa chỉ /exec", api); return; }
+    return timed(api + "?api=kt&from=999999999", null, 30000).then(function(x){ return x.r.text().then(function(t){ done(b2, x.r.ok, (x.r.ok ? "OK" : "HTTP " + x.r.status) + " sau " + x.s + " giây", t.slice(0, 200)); }); },
+      function(x){ done(b2, false, "Không nhận được trả lời sau " + x.s + " giây", String(x.e && x.e.name || x.e)); })
+    .then(function(){
+      var b3 = box("3. Lấy danh sách lớp theo mã " + (ma || "(chưa nhập)"));
+      if(!/^\d{6}$/.test(ma)){ done(b3, false, "Chưa nhập mã 6 số", ""); return; }
+      return timed(api + "?api=ds&ma=" + ma, null, 30000).then(function(x){ return x.r.text().then(function(t){
+          var d = null; try{ d = JSON.parse(t); }catch(e){}
+          if(d && d.ok && d.ds) done(b3, d.ds.filter(Boolean).length > 0, "Máy chủ trả lời sau " + x.s + " giây · lớp " + d.lop + " · " + d.ds.filter(Boolean).length + " học sinh", t.slice(0, 160));
+          else done(b3, false, "Máy chủ trả lời sau " + x.s + " giây nhưng báo: " + (d ? (d.err || "lỗi") : "không đọc được"), t.slice(0, 300));
+        }); },
+        function(x){ done(b3, false, "Không nhận được trả lời sau " + x.s + " giây", String(x.e && x.e.name || x.e)); });
+    });
+  });
+};
+</script>
+</body>
+</html>
