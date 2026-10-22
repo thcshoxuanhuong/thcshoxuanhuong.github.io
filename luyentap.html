@@ -379,7 +379,7 @@ td.num{text-align:center;white-space:nowrap}
 <script src="ketnoi.js"></script>
 <script>
 /* ===== Bản web – luyện tập ===== */
-var KWEBKEY = "thcs_web_mabimat_v1", KWEBTEN = "thcs_web_hoten_v1";
+var KWEBKEY = "thcs_web_mabimat_v1", KWEBTEN = "thcs_web_hoten_v1", WEBCFG = {};
 window.DSLOP = window.DSLOP || {};
 var WEBTENNOW = "";
 function tenIn(id){ var el = document.getElementById(id); return el ? el.value.replace(/\s+/g, " ").trim() : ""; }
@@ -479,7 +479,13 @@ function aq(id){
 /* ---------- mã giao bài (tự mã hoá: lớp + bài + ngày, không cần mạng) ---------- */
 var MOD = 1000000, MA = 7919, KSALT = 9157, KCODES = "thcs_magiaobai_v1";
 var MAINV = (function(){ var t=0, nt=1, r=MOD, nr=MA; while(nr){ var q=Math.floor(r/nr); var a=t-q*nt; t=nt; nt=a; a=r-q*nr; r=nr; nr=a; } return (t%MOD+MOD)%MOD; })();
-function dayKey(d){ d = d || new Date(); return d.getFullYear()*10000 + (d.getMonth()+1)*100 + d.getDate(); }
+var CLOCKOFF = 0;
+function dayKey(d){ var t = d ? d.getTime() : Date.now() + CLOCKOFF; var v = new Date(t + 7*3600000); return v.getUTCFullYear()*10000 + (v.getUTCMonth()+1)*100 + v.getUTCDate(); }
+(function(){
+  function set(ms){ if(!(ms > 0)) return; var off = ms - Date.now(); if(Math.abs(off) < 120000) return; CLOCKOFF = off;
+    try{ if(typeof checkJoin === "function" && $("inCode").value){ checkJoin.lop = null; checkJoin(); } }catch(e){} }
+  try{ fetch(location.href.split("#")[0], { method:"HEAD", cache:"no-store" }).then(function(r){ set(Date.parse(r.headers.get("Date"))); }).catch(function(){}); }catch(e){}
+})();
 function hh(a, b){ var x = (Math.imul(a|0, 0x9E3779B1) ^ Math.imul(b|0, 0x85EBCA77) ^ KSALT) >>> 0; x ^= x >>> 15; x = Math.imul(x, 0x2C1B3C6D) >>> 0; x ^= x >>> 12; x = Math.imul(x, 0x297A2D39) >>> 0; x ^= x >>> 15; return x >>> 0; }
 function optsFor(g){
   var o = [];
@@ -560,21 +566,22 @@ function joinReady(){ $("btnJoin").disabled = !(JOIN && joinStt() > 0 && (checkJ
 var webDsBusy = "", webDsDone = {}, webDsFail = {};
 function webLoadDs(ma, lop){
   var k = ma + lop;
+  var kc = "thcs_web_ds_" + k, cc = sget(kc, null); if(cc && cc.d === dayKey() && cc.ds && cc.ds.length && !(window.DSLOP[lop] || []).length){ window.DSLOP[lop] = cc.ds; if(cc.cfg) WEBCFG[ma] = cc.cfg; }
   if((window.DSLOP[lop] || []).length || webDsBusy || webDsDone[k] || !SYNC.candidates().length || typeof fetch === "undefined") return;
   webDsBusy = lop; $("tenBox").classList.add("hide");
   var info = $("codeInfo"), txt = info.textContent; info.textContent = txt + " · ⏳ đang tải danh sách lớp…";
-  SYNC.ready().then(function(url){ if(!url) throw 0; return fetch(url + "?api=ds&ma=L" + ma, { cache:"no-store" }); })
+  Promise.resolve(SYNC.candidates()[0]).then(function(url){ return fetch(url + "?api=ds&ma=L" + ma, { cache:"no-store" }); })
     .then(function(r){ return r.json(); })
     .then(function(d){
-      webDsDone[k] = 1;
-      if(d && d.lop === lop && d.ds && d.ds.filter(Boolean).length){ window.DSLOP[lop] = d.ds; return ""; }
+      webDsDone[k] = 1; if(d && d.tg) WEBCFG[ma] = { tg:+d.tg, vp:+d.vp || 3, n:+d.n || 0 };
+      if(d && d.lop === lop && d.ds && d.ds.filter(Boolean).length){ window.DSLOP[lop] = d.ds; sset(kc, { d: dayKey(), ds: d.ds, cfg: WEBCFG[ma] || null }); return ""; }
       if(d && d.ok) return " · (lớp " + lop + " chưa có danh sách – em gõ họ tên)";
       if(d && d.err === "het") return " · (mã đã quá 24 giờ – em gõ họ tên)";
       return " · (máy chủ chưa có mã này – em gõ họ tên)";
     })
     .catch(function(){
       webDsFail[k] = (webDsFail[k] || 0) + 1;
-      if(webDsFail[k] < 2) return "RETRY";
+      if(webDsFail[k] < 3) return "RETRY";
       webDsDone[k] = 1; return " · (không kết nối được máy chủ – em gõ họ tên)";
     })
     .then(function(note){
