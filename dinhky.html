@@ -234,7 +234,7 @@ input.num{width:220px;font-size:1.3em;font-weight:800;text-align:right;border:2p
   <div class="hero">
     <div class="logo">👨‍🏫</div>
     <div style="flex:1"><h1>Giáo viên – Kiểm tra định kỳ</h1><div class="mut" id="gvConn"></div></div>
-    <button class="btn ghost sm" id="gvOut">⟵ Về trang học sinh</button>
+    <button class="btn ghost sm" id="gvOut">🔒 Đăng xuất</button>
   </div>
   <div class="tabs"><button class="on" data-t="tMa">🔑 Tạo mã kiểm tra</button><button data-t="tCham">📝 Chấm bài & kết quả</button></div>
 
@@ -332,7 +332,9 @@ var NET = (function(){
     });
     return probing;
   }
-  function key(){ try{ return localStorage.getItem("thcs_web_mabimat_v1") || ""; }catch(e){ return ""; } }
+  /* Mã bí mật chỉ giữ trong bộ nhớ của lần đăng nhập này (không lưu vào trình duyệt): tải lại trang hoặc thoát là phải nhập lại. */
+  var KEY = "";
+  function key(){ return KEY; }
   function get(api, q, needKey){
     return ready().then(function(b){ if(!b) throw new Error("net");
       return tfetch(url(api, q) + (web && needKey ? (q ? "&" : (web ? "&" : "?")) + "key=" + encodeURIComponent(key()) : ""));
@@ -344,7 +346,7 @@ var NET = (function(){
         { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: lines.map(function(x){ return typeof x === "string" ? x : JSON.stringify(x); }).join("\n") }, 30000);
     });
   }
-  return { web: web, ready: ready, get: get, post: post, key: key, lost: function(){ base = ""; } };
+  return { web: web, ready: ready, get: get, post: post, key: key, setKey: function(k){ KEY = String(k || ""); }, lost: function(){ base = ""; } };
 })();
 
 /* ======================= CHẤM ĐIỂM ======================= */
@@ -793,34 +795,45 @@ function aiPick(a){ /* hai AI lệch ≤ 0,5 điểm → tự thống nhất l�
   return null;
 }
 var KCODES = "dk_codes_v1";
-$("btnGv").onclick = function(){
-  if(NET.web){
-    var k = NET.key();
-    var ask = function(){
-      dlg("<h2>🔑 Mã bí mật giáo viên</h2><p class='mut'>Mã bí mật đặt trong Code.gs (dùng chung với trang kiểm tra theo bài).</p><input id='kIn' type='password' style='width:100%;padding:10px;border:2px solid #dbe3ec;border-radius:10px' value='" + esc(k) + "'><div class='foot'><button class='btn ghost' onclick='dlgClose()'>Huỷ</button><div class='sp'></div><button class='btn' id='kOk'>Vào</button></div>");
-      $("kOk").onclick = function(){ try{ localStorage.setItem("thcs_web_mabimat_v1", $("kIn").value.trim()); }catch(e){} dlgClose(); enterGv(function(){ k = NET.key(); toast("🔒 Mã bí mật chưa đúng – thầy nhập lại."); ask(); }); };
-    };
-    if(!k) ask(); else enterGv(ask);
-  } else {
-    dlg("<h2>👨‍🏫 Giáo viên</h2><p class='mut'>Nhập mã giáo viên (bản LAN):</p><input id='kIn' type='password' style='width:100%;padding:10px;border:2px solid #dbe3ec;border-radius:10px'><div class='foot'><button class='btn ghost' onclick='dlgClose()'>Huỷ</button><div class='sp'></div><button class='btn' id='kOk'>Vào</button></div>");
-    $("kOk").onclick = function(){ if($("kIn").value.trim() !== "2026"){ toast("Mã chưa đúng."); return; } dlgClose(); enterGv(); };
-  }
-};
-function enterGv(onBadKey){
-  $("gvConn").textContent = "⏳ Đang kết nối máy chủ…";
-  NET.get("dk", "from=999999998", true).then(function(d){
-    if(d && d.err === "key"){ if(onBadKey) onBadKey(); else toast("Mã bí mật chưa đúng."); throw new Error("key"); }
-    $("scJoin").classList.add("hide"); $("scGv").classList.remove("hide");
-    $("gvConn").textContent = (NET.web ? "🟢 Đã kết nối Google Trang tính" : "🟢 Đã kết nối máy chủ trong phòng máy") + " · " + (d && d.n || 0) + " bản ghi";
-    initGv();
-  }).catch(function(e){
-    if(e.message === "key") return;
-    $("scJoin").classList.add("hide"); $("scGv").classList.remove("hide");
-    $("gvConn").innerHTML = "⚠️ Chưa kết nối được máy chủ (" + (NET.web ? "kiểm tra Internet / địa chỉ trong ketnoi.js / đã cập nhật Code.gs chưa" : "kiểm tra cửa sổ BatMayChu còn mở") + ").";
-    initGv();
-  });
+function askPass(msg){
+  dlg("<h2>🔑 Đăng nhập giáo viên</h2><p class='mut'>" + (NET.web ? "Nhập mã bí mật giáo viên (đặt trong Code.gs)." : "Nhập mã giáo viên bản LAN.") + "</p>"
+    + (msg ? "<div class='msg bad'>" + esc(msg) + "</div>" : "")
+    + "<input id='kIn' type='password' autocomplete='off' style='width:100%;padding:10px;border:2px solid #dbe3ec;border-radius:10px;margin-top:8px'>"
+    + "<div class='foot'><button class='btn ghost' onclick='dlgClose()'>Huỷ</button><div class='sp'></div><button class='btn' id='kOk'>Vào</button></div>");
+  var go = function(){
+    var v = $("kIn").value.trim(); if(!v){ $("kIn").focus(); return; }
+    if(!NET.web){ if(v !== "2026"){ askPass("Mã chưa đúng."); return; } dlgClose(); enterGv(); return; }
+    $("kOk").disabled = true; $("kOk").textContent = "Đang kiểm tra…";
+    NET.setKey(v);
+    NET.get("dk", "from=999999998", true).then(function(d){
+      if(!d || d.err === "key"){ NET.setKey(""); askPass("Mã bí mật chưa đúng."); return; }
+      dlgClose(); enterGv(d);
+    }).catch(function(){ NET.setKey(""); askPass("Chưa kết nối được máy chủ (kiểm tra Internet, ketnoi.js, đã cập nhật Code.gs chưa)."); });
+  };
+  $("kOk").onclick = go;
+  $("kIn").addEventListener("keydown", function(e){ if(e.key === "Enter") go(); });
+  setTimeout(function(){ $("kIn").focus(); }, 30);
 }
-$("gvOut").onclick = function(){ $("scGv").classList.add("hide"); $("scJoin").classList.remove("hide"); };
+$("btnGv").onclick = function(){ askPass(""); };
+function enterGv(d){
+  $("scJoin").classList.add("hide"); $("scExam").classList.add("hide"); $("scGv").classList.remove("hide");
+  if(NET.web) $("gvConn").textContent = "🟢 Đã kết nối Google Trang tính · " + (d && d.n || 0) + " bản ghi";
+  else{
+    $("gvConn").textContent = "⏳ Đang kết nối máy chủ…";
+    NET.get("dk", "from=999999998").then(function(x){ $("gvConn").textContent = "🟢 Đã kết nối máy chủ trong phòng máy · " + (x && x.n || 0) + " bản ghi"; })
+      .catch(function(){ $("gvConn").textContent = "⚠️ Chưa kết nối được máy chủ (kiểm tra cửa sổ BatMayChu còn mở)."; });
+  }
+  initGv(); touchGv();
+}
+function logoutGv(why){
+  NET.setKey(""); clearTimeout(window._gvIdle); dlgClose();
+  $("scGv").classList.add("hide"); $("scJoin").classList.remove("hide");
+  if(why) toast(why);
+}
+/* tự đăng xuất sau 15 phút không thao tác */
+function touchGv(){ clearTimeout(window._gvIdle); window._gvIdle = setTimeout(function(){ if(!$("scGv").classList.contains("hide")) logoutGv("🔒 Đã tự đăng xuất giáo viên sau 15 phút không thao tác."); }, 15 * 60000); }
+["click", "keydown"].forEach(function(ev){ document.addEventListener(ev, function(){ if(!$("scGv").classList.contains("hide")) touchGv(); }, true); });
+$("gvOut").onclick = function(){ logoutGv("🔒 Đã đăng xuất giáo viên."); };
 document.querySelectorAll(".tabs button").forEach(function(b){ b.onclick = function(){
   document.querySelectorAll(".tabs button").forEach(function(x){ x.classList.toggle("on", x === b); });
   $("tMa").classList.toggle("hide", b.dataset.t !== "tMa"); $("tCham").classList.toggle("hide", b.dataset.t !== "tCham");
@@ -932,7 +945,7 @@ function renderTbl(){
   });
   if(!list.length) h += "<tr><td colspan='12' class='mut'>Chưa có bài nộp cho đề này.</td></tr>";
   $("cTbl").innerHTML = h; GV.list = list;
-  $("cSum").innerHTML = "<b>" + list.length + "</b> bài · <b>" + nk + "</b> đã chốt · <b>" + nr + "</b> hai AI thống nhất (chờ chốt) · <b style='color:#c62828'>" + nl + "</b> lệch điểm cần thầy xem · " + nw + " chưa đủ hai AI chấm";
+  $("cSum").innerHTML = "<b>" + list.length + "</b> bài · <b>" + nk + "</b> đã chốt · <b>" + nr + "</b> sẵn sàng chốt · <b style='color:#c62828'>" + nl + "</b> lệch điểm cần thầy xem · " + nw + " chưa đủ hai AI chấm";
 }
 $("cTbl").addEventListener("click", function(e){ var r = e.target.closest("tr.row"); if(r) openGrade(+r.dataset.i); });
 
