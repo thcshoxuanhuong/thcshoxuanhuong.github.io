@@ -178,12 +178,13 @@ td.num{text-align:center;white-space:nowrap}
   header.top,.tools,.noprint{display:none!important}
   body{background:#fff} .card{border:0;box-shadow:none;padding:0}
 }
+body.examon .toplk{display:none!important}
 </style>
 </head>
 <body>
 <header class="top">
   <div><div class="t">💻 Luyện tập Tin học THCS 6 – 7 – 8 – 9</div><div class="s">Câu hỏi do AI hỗ trợ soạn – giáo viên kiểm duyệt · SGK Kết nối tri thức · THCS Hồ Xuân Hương</div></div>
-  <div class="toplinks"><a class="gv noprint" href="index.html">📝 Kiểm tra</a><button class="gv noprint" id="btnTeacher">👨‍🏫 Giáo viên</button></div>
+  <div class="toplinks" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><a class="gv noprint toplk" href="index.html" style="text-decoration:none">📝 Kiểm tra theo bài</a><a class="gv noprint toplk" href="dinhky.html" style="text-decoration:none">🗓️ Kiểm tra định kỳ</a><button class="gv noprint" id="btnTeacher">👨‍🏫 Giáo viên</button></div>
 </header>
 
 <div class="wrap">
@@ -331,7 +332,7 @@ td.num{text-align:center;white-space:nowrap}
       <div class="tools" style="margin:0">
         <label class="big" for="inDsFile" style="display:inline-block;font-size:18px;padding:10px 18px">📥 Chọn tệp Excel (.xlsx)</label>
         <input type="file" id="inDsFile" accept=".xlsx,.csv" class="hide">
-        <button class="btn" id="btnDsTemplate">📄 Tải tệp mẫu</button>
+        <button class="btn" id="btnDsTemplate">📄 Tải tệp mẫu</button><button class="btn" id="btnDsCloud">☁️ Gửi danh sách lên máy chủ</button>
       </div>
       <div id="dsPreview"></div>
     </div>
@@ -411,7 +412,7 @@ function webCheckKey(say){
       var u = String(url), api = String(window.WEBAPI || "");
       if(api && u.indexOf(api) === 0){
         var post = opt && String(opt.method || "").toUpperCase() === "POST";
-        var need = (u.indexOf("api=kq&from=") > 0 && u.indexOf("from=999999999") < 0) || (post && u.indexOf("api=de") > 0);
+        var need = (u.indexOf("api=kq&from=") > 0 && u.indexOf("from=999999999") < 0) || (post && (u.indexOf("api=de") > 0 || u.indexOf("api=ds") > 0));
         if(need) url = u + "&key=" + encodeURIComponent(webKey());
         /* không chờ Google quá 15 giây */
         if(typeof AbortController !== "undefined" && !(opt && opt.signal)){
@@ -924,7 +925,7 @@ function sendCfgL(list){
   return SYNC.ready().then(function(url){
     if(!url){ window._cfgErr = "net"; return false; }
     return fetch(url + "?api=de", { method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" },
-      body: list.map(function(x){ return JSON.stringify({ ma: "L" + ("000000"+x.code).slice(-6), tg: 0, vp: 0, n: 0, dk: x.dk, lop: x.lop }); }).join("\n") })
+      body: list.map(function(x){ return JSON.stringify({ ma: "L" + ("000000"+x.code).slice(-6), tg: 0, vp: 0, n: 0, dk: x.dk, lop: x.lop, ds: (roster()[x.lop] || []) }); }).join("\n") })
       .then(function(r){ return r.json(); }).then(function(d){ window._cfgErr = d && d.err; return !!(d && d.ok); });
   }).catch(function(){ window._cfgErr = "net"; return false; });
 }
@@ -1380,6 +1381,27 @@ $("dsPreview").addEventListener("click", function(e){
   if(cls.length) $("dsClass").value = cls[0];
   fillClasses(); renderReport(); renderRoster();
 });
+
+function webUpDs(all){
+  var url = SYNC.candidates()[0], cls = Object.keys(all || {}).filter(function(c){ return (all[c] || []).filter(Boolean).length; });
+  if(!cls.length){ toast("Máy này chưa có danh sách lớp nào. Bấm 📥 Chọn tệp Excel để nhập danh sách trước."); return; }
+  if(!url){ toast("Chưa có địa chỉ máy chủ (ketnoi.js)."); return; }
+  if(!webKey()){ webAskKey(); return; }
+  var body = {}; cls.forEach(function(c){ body[c] = all[c]; });
+  toast("⏳ Đang gửi danh sách " + cls.length + " lớp lên máy chủ…");
+  fetch(url + "?api=ds", { method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" }, body: JSON.stringify({ all: body }) })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(d && d.ok) toast("☁️ Đã gửi danh sách " + d.lop + " lớp (" + d.hs + " học sinh) lên máy chủ. Học sinh nhập mã sẽ thấy tên để chọn.");
+      else if(d && d.err === "key") toast("🔒 Mã bí mật chưa đúng nên chưa gửi được. Bấm 🔑 để nhập lại.");
+      else toast("⚠️ Máy chủ chưa nhận danh sách" + (d && d.err ? " (" + d.err + ")" : "") + ". Thầy cô cần dán Code.gs mới và Triển khai phiên bản mới.");
+    })
+    .catch(function(){ toast("⚠️ Không kết nối được máy chủ, chưa gửi được danh sách."); });
+}
+$("dsPreview").addEventListener("click", function(e){
+  if(e.target.id === "btnDsImportOk" && DSIMPORT){ webUpDs(DSIMPORT.data); setTimeout(function(){ if(typeof fillGb === "function") fillGb(); }, 0); }
+}, true);
+$("btnDsCloud").addEventListener("click", function(){ webUpDs(sget(KROS, {})); });
 $("btnDsTemplate").addEventListener("click", function(){
   var S = XL.S, sample = [["6A",1,"Nguyễn Văn An"],["6A",2,"Trần Thị Bình"],["6A",3,"Lê Văn Cường"],["6B",1,"Phạm Thu Dung"],["6B",2,"Hồ Minh Đức"],["7A",1,"Võ Thị Giang"]];
   var rows = [[{v:"DANH SÁCH HỌC SINH (mẫu nhập vào trang luyện tập)", s:S.title}],
