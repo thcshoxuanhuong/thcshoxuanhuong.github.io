@@ -252,14 +252,20 @@ input.num{width:220px;font-size:1.3em;font-weight:800;text-align:right;border:2p
       <div id="gCodeMsg" class="msg"></div>
       <button class="btn ghost sm" id="gFull" style="margin-top:10px">🖥️ Chiếu mã toàn màn hình</button>
     </div>
-    <h2 style="margin-top:22px">Mã đã tạo hôm nay</h2>
-    <table class="tbl" id="gToday"></table>
+    <h2 style="margin-top:22px">Các mã đã tạo <span class="mini">(lưu lâu dài – tìm lại mã cũ để xem kết quả)</span></h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <input id="dkQ" placeholder="🔍 Tìm theo mã hoặc lớp…" style="flex:1;min-width:180px;padding:8px 10px;border:2px solid var(--line);border-radius:10px">
+      <select id="dkF" style="padding:8px;border:2px solid var(--line);border-radius:10px"><option value="">Tất cả</option><option value="mo">🟢 Đang mở</option><option value="khoa">🔒 Đã khoá / hết ngày</option><option value="nay">Hôm nay</option></select>
+      <button class="btn ghost sm" id="dkR">🔄 Cập nhật trạng thái</button>
+    </div>
+    <div style="overflow:auto;max-height:60vh"><table class="tbl" id="gToday"></table></div>
   </div>
 
   <div id="tCham" class="card hide">
     <div class="frm">
       <div><label>Đề</label><select id="cDe"></select></div>
       <div><label>Lớp</label><select id="cLop"></select></div>
+      <div><label>Mã kiểm tra</label><select id="cMa"></select></div>
       <div><button class="btn" id="cLoad">🔄 Tải bài mới</button></div>
     </div>
     <div id="cSum" class="mut" style="margin:12px 0"></div>
@@ -691,6 +697,7 @@ function loadCode(ma){
     if(!de) throw new Error("cu");
     if(!ex) throw new Error("de");
     if(d.dk && +String(d.dk).replace(/\D/g, "") !== dayKey()) throw new Error("het");
+    if(d.khoa){ JOIN.khoa = d.khoa; throw new Error("khoa"); }
     JOIN.cfg = { ma: ma, lop: String(d.lop || "").toUpperCase(), de: de, tg: +d.tg || ex.tg, vp: +d.vp || 3 };
     return loadRoster(JOIN.cfg);
   }).then(function(ds){
@@ -707,6 +714,7 @@ function loadCode(ma){
     var m = String(e && e.message);
     joinMsg(m === "net" || /fetch|abort|HTTP/i.test(m) ? "⚠️ Chưa kết nối được máy chủ. Em báo thầy cô kiểm tra máy chủ rồi nhập lại mã." :
       m === "het" ? "⌛ Mã này đã hết hạn (mã chỉ dùng trong ngày tạo)." :
+      m === "khoa" ? "🔒 Mã này đã khoá (" + esc(prettyKhoa(JOIN.khoa)) + "). Em hỏi thầy cô nhé." :
       m === "cu" ? "⚠️ Mã này là mã của trang kiểm tra theo bài, không phải mã đề định kỳ." :
       m === "de" ? "⚠️ Trang chưa có đề này. Thầy cô cần cập nhật trang." : "❌ Mã chưa đúng. Em xem lại mã thầy cô cho.", "bad");
   });
@@ -864,36 +872,106 @@ $("gMake").onclick = function(){
   NET.post("de", [item], true).then(function(d){
     if(!d || !d.ok) throw new Error(d && d.err || "save");
     $("gCodeMsg").className = "msg ok"; $("gCodeMsg").textContent = "✅ Đã lưu mã. Học sinh nhập mã này để vào bài.";
-    var list = sget(KCODES, []).filter(function(x){ return x.dk === dayKey(); }); list.unshift(item); sset(KCODES, list); renderToday();
+    var list = sget(KCODES, []); item.t = new Date().toISOString(); list.unshift(item); sset(KCODES, list); renderToday();
   }).catch(function(e){
     $("gCodeMsg").className = "msg bad";
     $("gCodeMsg").textContent = e.message === "key" ? "🔒 Chưa lưu được: mã bí mật chưa đúng." : "⚠️ Chưa lưu được mã lên máy chủ – học sinh chưa dùng được mã này. Kiểm tra kết nối rồi bấm Tạo mã lại.";
   });
 };
 $("gFull").onclick = function(){ dlg("<div style='text-align:center'><div class='mut'>" + esc($("gCodeInfo").textContent) + "</div><div class='codebig' style='font-size:120px'>" + esc($("gCodeBig").textContent) + "</div><button class='btn' onclick='dlgClose()'>Đóng</button></div>", true); };
-function renderToday(){
-  var list = sget(KCODES, []).filter(function(x){ return x.dk === dayKey(); });
-  $("gToday").innerHTML = list.length ? "<tr><th>Mã</th><th>Lớp</th><th class='l'>Đề</th><th>Thời gian</th><th>Rời bài</th></tr>" + list.map(function(x){ return "<tr><td><b>" + fmtCode(x.ma) + "</b></td><td>" + esc(x.lop) + "</td><td class='l'>" + esc((EXAMS[x.de] || {}).ten || x.de) + "</td><td>" + x.tg + " phút</td><td>" + x.vp + " lần</td></tr>"; }).join("") : "<tr><td class='mut'>Chưa tạo mã nào hôm nay.</td></tr>";
+/* ---------- danh sách mã: lưu lâu dài, trạng thái khoá ---------- */
+GV.srv = {}; GV.q = ""; GV.f = ""; GV.srvT = 0;
+function prettyKhoa(t){ t = String(t || ""); var m;
+  if((m = /^auto:(\d+)\/(\d+):(.*)$/.exec(t))) return "Tự khoá – cả lớp đã làm (" + m[1] + "/" + m[2] + ") lúc " + m[3];
+  if((m = /^gv:(.*)$/.exec(t))) return "Giáo viên khoá lúc " + m[1];
+  return t; }
+function fmtDk(dk){ dk = String(dk); return dk.slice(6, 8) + "/" + dk.slice(4, 6) + "/" + dk.slice(0, 4); }
+function codeState(x){
+  var s = GV.srv[x.ma] || {};
+  if(s.khoa) return { lock: true, can: x.dk === dayKey(), txt: "🔒 " + prettyKhoa(s.khoa) };
+  if(x.dk !== dayKey()) return { lock: true, can: false, txt: "🔒 Hết ngày" };
+  return { lock: false, can: true, txt: "🟢 Đang mở" };
 }
+function loadSrvCodes(force){
+  if(!force && Date.now() - GV.srvT < 15000) return Promise.resolve(false);
+  GV.srvT = Date.now();
+  return NET.get("khoa", "", true).then(function(d){
+    if(!d || !d.ma) return false;
+    var list = sget(KCODES, []), have = {}; list.forEach(function(x){ have[x.ma] = 1; });
+    d.ma.forEach(function(x){
+      var cfg = x.cfg || {}, de = x.de || cfg.de; if(!de) return;
+      GV.srv[x.ma] = { khoa: x.khoa || "", lam: +x.lam || 0, si: +x.si || 0 };
+      if(!have[x.ma]){ have[x.ma] = 1; list.push({ ma: x.ma, lop: x.lop || cfg.lop || "", de: de, dk: +(x.dk || cfg.dk) || 0, tg: +(x.tg || cfg.tg) || 0, vp: +(x.vp || cfg.vp) || 0, t: x.t || "" }); }
+    });
+    sset(KCODES, list); return true;
+  }).catch(function(){ return false; });
+}
+function renderToday(){
+  var q = GV.q.replace(/\s+/g, "").toUpperCase();
+  var all = sget(KCODES, []).slice().sort(function(a, b){ return (b.dk - a.dk) || String(b.t || "").localeCompare(String(a.t || "")); });
+  var list = all.filter(function(x){
+    var st = codeState(x);
+    if(GV.f === "mo" && st.lock) return false; if(GV.f === "khoa" && !st.lock) return false; if(GV.f === "nay" && x.dk !== dayKey()) return false;
+    return !q || x.ma.indexOf(q) >= 0 || String(x.lop).toUpperCase().indexOf(q) >= 0;
+  });
+  var h = "<tr><th>Mã</th><th>Lớp</th><th class='l'>Đề</th><th>Ngày tạo</th><th>Thời gian</th><th>Đã làm</th><th class='l'>Trạng thái</th><th></th></tr>";
+  h += list.slice(0, 200).map(function(x){
+    var st = codeState(x), s = GV.srv[x.ma] || {};
+    return "<tr" + (st.lock ? " style='opacity:.75'" : "") + "><td><b>" + fmtCode(x.ma) + "</b></td><td>" + esc(x.lop) + "</td><td class='l'>" + esc((EXAMS[x.de] || {}).ten || x.de) + "</td><td>" + fmtDk(x.dk) + "</td><td>" + (x.tg ? x.tg + " phút" : "") + "</td><td>" + (s.si ? (s.lam || 0) + "/" + s.si : (s.lam || "")) + "</td><td class='l small'>" + esc(st.txt) + "</td><td style='white-space:nowrap'>"
+      + (st.lock ? "" : "<button class='btn ghost sm' data-cshow='" + x.ma + "'>Chiếu</button> ")
+      + (st.can ? "<button class='btn ghost sm' data-ckh='" + x.ma + "|" + (st.lock ? 0 : 1) + "'>" + (st.lock ? "🔓 Mở khoá" : "🔒 Khoá") + "</button> " : "")
+      + "<button class='btn sm' data-ckq='" + x.ma + "'>Xem kết quả</button></td></tr>";
+  }).join("");
+  if(!list.length) h += "<tr><td colspan='8' class='mut'>" + (all.length ? "Không có mã phù hợp." : "Chưa tạo mã nào.") + "</td></tr>";
+  $("gToday").innerHTML = h;
+  loadSrvCodes(false).then(function(ok){ if(ok) renderToday(); });
+}
+$("dkQ").oninput = function(){ GV.q = this.value.trim(); renderToday(); };
+$("dkF").onchange = function(){ GV.f = this.value; renderToday(); };
+$("dkR").onclick = function(){ loadSrvCodes(true).then(renderToday); };
+$("gToday").addEventListener("click", function(e){
+  var b = e.target.closest("[data-cshow],[data-ckh],[data-ckq]"); if(!b) return;
+  var ma = b.dataset.cshow || b.dataset.ckq || b.dataset.ckh.split("|")[0], x = sget(KCODES, []).filter(function(y){ return y.ma === ma; })[0]; if(!x) return;
+  if(b.dataset.cshow){ dlg("<div style='text-align:center'><div class='mut'>Lớp " + esc(x.lop) + " · " + esc((EXAMS[x.de] || {}).ten || x.de) + "</div><div class='codebig' style='font-size:120px'>" + fmtCode(x.ma) + "</div><button class='btn' onclick='dlgClose()'>Đóng</button></div>", true); return; }
+  if(b.dataset.ckq){
+    document.querySelector(".tabs button[data-t='tCham']").click();
+    $("cDe").value = x.de; GV.wantMa = x.ma; GV.wantLop = x.lop; return;
+  }
+  var on = b.dataset.ckh.split("|")[1] === "1";
+  if(on && !confirm("Khoá mã " + fmtCode(x.ma) + " (lớp " + x.lop + ")? Học sinh sẽ không vào được mã này nữa. Bài đã nộp vẫn được giữ.")) return;
+  NET.post("khoa", [{ ma: x.ma, khoa: on, lop: x.lop, dk: x.dk, de: x.de, tg: x.tg, vp: x.vp }], true).then(function(d){
+    if(!d || !d.ok) throw 0;
+    (GV.srv[x.ma] = GV.srv[x.ma] || {}).khoa = on ? "gv:" + new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) + " " + new Date().toLocaleDateString("vi-VN") : "";
+    toast(on ? "🔒 Đã khoá mã " + fmtCode(x.ma) : "🔓 Đã mở khoá mã " + fmtCode(x.ma)); renderToday();
+  }).catch(function(){ toast("⚠️ Chưa khoá/mở được – kiểm tra kết nối máy chủ."); });
+});
 
 /* ---------- tải & gộp kết quả ---------- */
 function loadRecs(){
   $("cSum").textContent = "⏳ Đang tải bài làm…";
   NET.get("dk", "from=0", true).then(function(d){
     if(d && d.err === "key"){ $("cSum").textContent = "🔒 Mã bí mật chưa đúng."; return; }
-    GV.recs = (d && d.recs) || []; fillFilters(); renderTbl();
+    GV.recs = (d && d.recs) || []; fillFilters(); if(GV.wantLop){ $("cLop").value = GV.wantLop; GV.wantLop = ""; } fillMaSel(); renderTbl();
   }).catch(function(){ $("cSum").textContent = "⚠️ Chưa tải được bài làm (kiểm tra kết nối máy chủ)."; });
 }
 $("cLoad").onclick = loadRecs;
 function students(de, lop){
-  var bai = {}, cham = {};
+  var bai = {}, cham = {}, ma = $("cMa").value;
   GV.recs.forEach(function(r){
     if(!r || r.de !== de && r.t === "bai") return;
-    if(r.t === "bai" && (!lop || r.lop === lop)){ var k = r.lop + "|" + r.stt; if(!bai[k] || r.kt > bai[k].kt){ var n = bai[k] ? bai[k].lan + 1 : 1; bai[k] = r; r.lan = n; } }
+    if(r.t === "bai" && (!lop || r.lop === lop) && (!ma || r.ma === ma)){ var k = r.lop + "|" + r.stt; if(!bai[k] || r.kt > bai[k].kt){ var n = bai[k] ? bai[k].lan + 1 : 1; bai[k] = r; r.lan = n; } }
     if(r.t === "cham"){ if(!cham[r.phien] || r.luc > cham[r.phien].luc) cham[r.phien] = r; }
   });
   return Object.keys(bai).map(function(k){ var b = bai[k]; return { b: b, c: cham[b.phien] || null }; })
     .sort(function(x, y){ return x.b.lop.localeCompare(y.b.lop) || x.b.stt - y.b.stt; });
+}
+function fillMaSel(){
+  var de = $("cDe").value, lop = $("cLop").value, cur = GV.wantMa || $("cMa").value, mas = {};
+  GV.recs.forEach(function(r){ if(r.t === "bai" && r.de === de && (!lop || r.lop === lop) && r.ma){ var m = mas[r.ma] = mas[r.ma] || { lop: r.lop, n: 0, t: r.kt }; m.n++; } });
+  if(cur && !mas[cur]) mas[cur] = { lop: GV.wantLop || "", n: 0, t: "" };
+  $("cMa").innerHTML = "<option value=''>Tất cả các mã</option>" + Object.keys(mas).sort(function(a, b){ return String(mas[b].t).localeCompare(String(mas[a].t)); }).map(function(m){
+    return "<option value='" + m + "'" + (m === cur ? " selected" : "") + ">" + fmtCode(m) + " – " + esc(mas[m].lop) + " (" + mas[m].n + " bài)</option>"; }).join("");
+  GV.wantMa = "";
 }
 function fillFilters(){
   var de = $("cDe").value, lops = {};
@@ -901,8 +979,9 @@ function fillFilters(){
   var cur = $("cLop").value, ls = Object.keys(lops).sort();
   $("cLop").innerHTML = "<option value=''>Tất cả các lớp</option>" + ls.map(function(l){ return "<option" + (l === cur ? " selected" : "") + ">" + esc(l) + "</option>"; }).join("");
 }
-$("cDe").onchange = function(){ fillFilters(); renderTbl(); };
-$("cLop").onchange = renderTbl;
+$("cDe").onchange = function(){ fillFilters(); fillMaSel(); renderTbl(); };
+$("cLop").onchange = function(){ fillMaSel(); renderTbl(); };
+$("cMa").onchange = renderTbl;
 
 /* điểm cuối cùng của từng ý: thầy > Claude > máy */
 function finalOf(st){
