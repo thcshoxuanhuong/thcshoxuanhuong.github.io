@@ -1632,7 +1632,8 @@ $("btnLogin").addEventListener("click", function(){ setTimeout(function(){
   }
 
   /* ---- 1. lưu trữ mã lâu dài: mọi lần ghi danh sách mã đều gộp vào kho lưu trữ ---- */
-  function arch(){ return sget(KARCH, []); }
+  var MEMARCH = null;   /* giữ trong bộ nhớ trang, phòng khi bộ nhớ trình duyệt đã đầy */
+  function arch(){ return (MEMARCH || sget(KARCH, [])).slice(); }
   function archMerge(list){
     var a = arch(), idx = {}, ch = false;
     a.forEach(function(x, i){ idx[x.code + "|" + x.dk] = i; });
@@ -1642,7 +1643,7 @@ $("btnLogin").addEventListener("click", function(){ setTimeout(function(){
       if(idx[k] == null){ a.push(x); idx[k] = a.length - 1; ch = true; }
       else { var o = a[idx[k]], n = Object.assign({}, o, x); if(JSON.stringify(n) !== JSON.stringify(o)){ a[idx[k]] = n; ch = true; } }
     });
-    if(ch) _ss(KARCH, a);
+    if(ch || !MEMARCH){ MEMARCH = a.slice(); _ss(KARCH, a); }
   }
   var _ss = sset;
   sset = function(k, v){ var r = _ss(k, v); if(k === KCODES && Array.isArray(v)) archMerge(v); return r; };

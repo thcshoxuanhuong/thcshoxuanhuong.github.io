@@ -821,6 +821,12 @@ function aiPick(a){ /* hai AI lệch ≤ 0,5 điểm → tự thống nhất l�
   return null;
 }
 var KCODES = "dk_codes_v1";
+/* Danh sách mã giữ trong bộ nhớ của trang; lưu thêm vào trình duyệt nếu còn chỗ.
+   (Bộ nhớ trình duyệt của trang web có thể đã đầy vì trang kiểm tra theo bài lưu rất nhiều kết quả cũ –
+   khi đó vẫn hiện đủ mã lấy từ máy chủ, chỉ không ghi nhớ được trên máy.) */
+var MEMCODES = null, CODEWARN = false;
+function getCodes(){ return (MEMCODES || sget(KCODES, [])).slice(); }
+function setCodes(l){ MEMCODES = l.slice(); if(!sset(KCODES, l) && !CODEWARN){ CODEWARN = true; console.warn("Bộ nhớ trình duyệt đầy – danh sách mã chỉ giữ trong lần mở trang này."); } }
 function askPass(msg){
   dlg("<h2>🔑 Đăng nhập giáo viên</h2><p class='mut'>" + (NET.web ? "Nhập mã bí mật giáo viên (đặt trong Code.gs)." : "Nhập mã giáo viên bản LAN.") + "</p>"
     + (msg ? "<div class='msg bad'>" + esc(msg) + "</div>" : "")
@@ -887,13 +893,23 @@ $("gMake").onclick = function(){
   $("gCode").classList.remove("hide"); $("gCodeBig").textContent = fmtCode(ma);
   $("gCodeInfo").textContent = "Lớp " + lop + " · " + EXAMS[de].ten + " · " + tg + " phút · rời bài tối đa " + vp + " lần";
   $("gCodeMsg").className = "msg wait"; $("gCodeMsg").textContent = "⏳ Đang lưu mã lên máy chủ…";
+  item.t = new Date().toISOString(); item.cho = 1;
+  var list0 = getCodes(); list0.unshift(item); setCodes(list0); renderToday();
+  function mark(ok){ var l = getCodes(); l.forEach(function(x){ if(x.ma === ma){ if(ok) delete x.cho; else x.cho = 2; } }); setCodes(l); renderToday(); }
   NET.post("de", [item], true).then(function(d){
     if(!d || !d.ok) throw new Error(d && d.err || "save");
     $("gCodeMsg").className = "msg ok"; $("gCodeMsg").textContent = "✅ Đã lưu mã. Học sinh nhập mã này để vào bài.";
-    var list = sget(KCODES, []); item.t = new Date().toISOString(); list.unshift(item); sset(KCODES, list); renderToday();
+    mark(true);
   }).catch(function(e){
-    $("gCodeMsg").className = "msg bad";
-    $("gCodeMsg").textContent = e.message === "key" ? "🔒 Chưa lưu được: mã bí mật chưa đúng." : "⚠️ Chưa lưu được mã lên máy chủ – học sinh chưa dùng được mã này. Kiểm tra kết nối rồi bấm Tạo mã lại.";
+    /* máy chủ Google có lúc trả lời chậm: kiểm tra lại xem mã đã vào máy chủ chưa */
+    NET.get("de", "ma=" + ma).then(function(d){
+      if(d && (d.lop || d.ma)){ $("gCodeMsg").className = "msg ok"; $("gCodeMsg").textContent = "✅ Đã lưu mã (máy chủ trả lời chậm). Học sinh nhập mã này để vào bài."; mark(true); return; }
+      throw 0;
+    }).catch(function(){
+      mark(false);
+      $("gCodeMsg").className = "msg bad";
+      $("gCodeMsg").textContent = e.message === "key" ? "🔒 Chưa lưu được: mã bí mật chưa đúng." : "⚠️ Chưa chắc mã đã lưu lên máy chủ (mạng chậm). Thầy bấm 🔄 Cập nhật trạng thái sau ít phút; nếu mã báo “chưa lưu” thì tạo mã mới.";
+    });
   });
 };
 $("gFull").onclick = function(){ dlg("<div style='text-align:center'><div class='mut'>" + esc($("gCodeInfo").textContent) + "</div><div class='codebig' style='font-size:120px'>" + esc($("gCodeBig").textContent) + "</div><button class='btn' onclick='dlgClose()'>Đóng</button></div>", true); };
@@ -906,6 +922,8 @@ function prettyKhoa(t){ t = String(t || ""); var m;
 function fmtDk(dk){ dk = String(dk); return dk.slice(6, 8) + "/" + dk.slice(4, 6) + "/" + dk.slice(0, 4); }
 function codeState(x){
   var s = GV.srv[x.ma] || {};
+  if(x.cho === 1) return { lock: false, can: false, txt: "⏳ Đang lưu lên máy chủ…" };
+  if(x.cho === 2 && !GV.srv[x.ma]) return { lock: true, can: false, txt: "⚠️ Chưa lưu được lên máy chủ – học sinh chưa dùng được" };
   if(s.khoa) return { lock: true, can: x.dk === dayKey(), txt: "🔒 " + prettyKhoa(s.khoa) };
   if(x.dk !== dayKey()) return { lock: true, can: false, txt: "🔒 Hết ngày" };
   return { lock: false, can: true, txt: "🟢 Đang mở" };
@@ -914,19 +932,25 @@ function loadSrvCodes(force){
   if(!force && Date.now() - GV.srvT < 15000) return Promise.resolve(false);
   GV.srvT = Date.now();
   return NET.get("khoa", "", true).then(function(d){
-    if(!d || !d.ma) return false;
-    var list = sget(KCODES, []), have = {}; list.forEach(function(x){ have[x.ma] = 1; });
+    if(!d || !d.ma){ GV.srvT = 0; return false; }
+    var list = getCodes(), have = {}; list.forEach(function(x){ have[x.ma] = x; });
     d.ma.forEach(function(x){
       var cfg = x.cfg || {}, de = x.de || cfg.de; if(!de) return;
       GV.srv[x.ma] = { khoa: x.khoa || "", lam: +x.lam || 0, si: +x.si || 0 };
-      if(!have[x.ma]){ have[x.ma] = 1; list.push({ ma: x.ma, lop: x.lop || cfg.lop || "", de: de, dk: +(x.dk || cfg.dk) || 0, tg: +(x.tg || cfg.tg) || 0, vp: +(x.vp || cfg.vp) || 0, t: x.t || "" }); }
+      if(have[x.ma]){ delete have[x.ma].cho; }
+      else{ have[x.ma] = {}; list.push({ ma: x.ma, lop: x.lop || cfg.lop || "", de: de, dk: +(x.dk || cfg.dk) || 0, tg: +(x.tg || cfg.tg) || 0, vp: +(x.vp || cfg.vp) || 0, t: x.t || "" }); }
     });
-    sset(KCODES, list); return true;
-  }).catch(function(){ return false; });
+    setCodes(list); return true;
+  }).catch(function(){ GV.srvT = 0; return false; });
 }
+/* tự cập nhật danh sách mã & trạng thái mỗi 60 giây khi đang ở thẻ "Tạo mã" */
+setInterval(function(){
+  if($("scGv").classList.contains("hide") || $("tMa").classList.contains("hide") || !NET.key() && NET.web) return;
+  loadSrvCodes(true).then(function(ok){ if(ok) renderToday(); });
+}, 60000);
 function renderToday(){
   var q = GV.q.replace(/\s+/g, "").toUpperCase();
-  var all = sget(KCODES, []).slice().sort(function(a, b){ return (b.dk - a.dk) || String(b.t || "").localeCompare(String(a.t || "")); });
+  var all = getCodes().slice().sort(function(a, b){ return (b.dk - a.dk) || String(b.t || "").localeCompare(String(a.t || "")); });
   var list = all.filter(function(x){
     var st = codeState(x);
     if(GV.f === "mo" && st.lock) return false; if(GV.f === "khoa" && !st.lock) return false; if(GV.f === "nay" && x.dk !== dayKey()) return false;
@@ -951,7 +975,7 @@ $("gToday").addEventListener("click", function(e){
   var rb = e.target.closest("[data-credo]");
   if(rb){ dlg("<div style='text-align:center'><h2>🔑 Mã làm lại – mã kiểm tra " + fmtCode(rb.dataset.credo) + "</h2><div class='codebig'>" + redoPin(rb.dataset.credo) + "</div><p class='mut'>Chỉ đọc cho em cần làm lại, không chiếu lên màn hình. Mã này khác mã giáo viên và chỉ dùng cho bài của mã kiểm tra này.</p><button class='btn' onclick='dlgClose()'>Đóng</button></div>"); return; }
   var b = e.target.closest("[data-cshow],[data-ckh],[data-ckq]"); if(!b) return;
-  var ma = b.dataset.cshow || b.dataset.ckq || b.dataset.ckh.split("|")[0], x = sget(KCODES, []).filter(function(y){ return y.ma === ma; })[0]; if(!x) return;
+  var ma = b.dataset.cshow || b.dataset.ckq || b.dataset.ckh.split("|")[0], x = getCodes().filter(function(y){ return y.ma === ma; })[0]; if(!x) return;
   if(b.dataset.cshow){ dlg("<div style='text-align:center'><div class='mut'>Lớp " + esc(x.lop) + " · " + esc((EXAMS[x.de] || {}).ten || x.de) + "</div><div class='codebig' style='font-size:120px'>" + fmtCode(x.ma) + "</div><button class='btn' onclick='dlgClose()'>Đóng</button></div>", true); return; }
   if(b.dataset.ckq){
     document.querySelector(".tabs button[data-t='tCham']").click();
