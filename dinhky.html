@@ -678,15 +678,34 @@ function startClock(){
     $("tTime").classList.toggle("low", left <= 300);
   }, 500);
 }
+/* ---- toàn màn hình + phát hiện rời bài (chuyển tab, thu nhỏ, thoát toàn màn hình) ---- */
+function fsEl(){ return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || null; }
+function goFull(){ var d = document.documentElement, f = d.requestFullscreen || d.webkitRequestFullscreen || d.msRequestFullscreen; try{ if(f && !fsEl()){ var r = f.call(d); if(r && r.catch) r.catch(function(){}); } }catch(e){} }
+function exitFull(){ var f = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen; try{ if(f && fsEl()){ var r = f.call(document); if(r && r.catch) r.catch(function(){}); } }catch(e){} }
+function dangLam(){ return S && S.st && !S.st.sent && !$("scExam").classList.contains("hide"); }
+var ROI = { t: 0, cho: false };
+function roiBai(){
+  if(!dangLam() || Date.now() - ROI.t < 1500) return false;
+  ROI.t = Date.now(); S.st.vp = (S.st.vp || 0) + 1; save();
+  if(S.st.vp > S.cfg.vp){ submit("roibai"); return false; }
+  return true;
+}
+function baoRoi(){
+  ROI.cho = false;
+  dlg("<h2>⚠️ Em vừa rời khỏi bài làm</h2><p>Số lần rời bài: <b>" + S.st.vp + "/" + S.cfg.vp + "</b>. Nếu rời quá " + S.cfg.vp + " lần, bài sẽ tự động nộp.</p><button class='btn' onclick='dlgClose();goFull()'>Em hiểu, làm tiếp</button>");
+}
 document.addEventListener("visibilitychange", function(){
-  if(!S || S.st.sent || $("scExam").classList.contains("hide")) return;
-  if(document.visibilityState === "hidden"){
-    S.st.vp = (S.st.vp || 0) + 1; save();
-    if(S.st.vp > S.cfg.vp){ submit("roibai"); return; }
-  } else if(S.st.vp){
-    dlg("<h2>⚠️ Em vừa rời khỏi bài làm</h2><p>Số lần rời bài: <b>" + S.st.vp + "/" + S.cfg.vp + "</b>. Nếu rời quá " + S.cfg.vp + " lần, bài sẽ tự động nộp.</p><button class='btn' onclick='dlgClose()'>Em hiểu, làm tiếp</button>");
-  }
+  if(!dangLam()) return;
+  if(document.visibilityState === "hidden"){ if(roiBai()) ROI.cho = true; }
+  else if(ROI.cho) baoRoi();
 });
+["fullscreenchange", "webkitfullscreenchange"].forEach(function(ev){ document.addEventListener(ev, function(){
+  if(fsEl() || !dangLam()) return;
+  if(document.visibilityState === "hidden"){ if(roiBai()) ROI.cho = true; return; }
+  if(roiBai()) baoRoi();
+}); });
+/* đang làm bài mà không ở toàn màn hình (vd. bấm ra ngoài hộp thông báo): bấm vào bài là trở lại toàn màn hình */
+document.addEventListener("click", function(){ if(dangLam() && !fsEl() && $("ov").classList.contains("hide")) goFull(); });
 
 /* ======================= VÀO BÀI ======================= */
 if(!NET.web){ $("lkLt").href = "LuyenTap_TinHoc_THCS.html"; $("lkKt").href = "KiemTra_TinHoc_THCS.html"; }
@@ -761,7 +780,7 @@ $("cfGo").onclick = function(){
   $("tWho").innerHTML = esc(S.hs.stt + ". " + S.hs.ten) + " <small>· Lớp " + esc(S.cfg.lop) + " · " + esc(ex.ten) + "</small>";
   $("scJoin").classList.add("hide"); $("scExam").classList.remove("hide");
   $("tTelex").classList.toggle("on", TELEX.on()); $("tTelex").textContent = "Gõ dấu: " + (TELEX.on() ? "BẬT" : "TẮT");
-  renderQ(); startClock();
+  renderQ(); startClock(); goFull();
 };
 
 /* ======================= MÃ LÀM LẠI (khác mã giáo viên, riêng cho từng mã kiểm tra) ======================= */
@@ -783,7 +802,7 @@ function submit(why){
   S.st.sent = true; S.st.end = Date.now();
   S.st.rec = { id: S.st.phien + "-b", t: "bai", phien: S.st.phien, ma: S.cfg.ma, de: S.cfg.de, lop: S.cfg.lop, stt: S.hs.stt, ten: S.hs.ten,
     tl: S.st.ans, may: { it: g.it, p: g.p, sure: g.sure, tong: g.tong }, vp: S.st.vp, ly: why, bd: new Date(S.st.start).toISOString(), kt: new Date(S.st.end).toISOString() };
-  S.st.ok = false; save(); clearInterval(TICK);
+  S.st.ok = false; save(); clearInterval(TICK); exitFull();
   showDone();
 }
 function showDone(){
