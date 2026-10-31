@@ -165,10 +165,10 @@ input.num{width:220px;font-size:1.3em;font-weight:800;text-align:right;border:2p
 
 <!-- ===== 1. VÀO BÀI ===== -->
 <section id="scJoin" class="wrap">
+  <div class="noprint" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-bottom:6px"><a class="btn ghost sm" id="lkLt" href="luyentap.html" style="text-decoration:none">📚 Luyện tập</a><a class="btn ghost sm" id="lkKt" href="index.html" style="text-decoration:none">📝 Kiểm tra theo bài</a></div>
   <div class="hero">
     <div class="logo">📝</div>
     <div style="flex:1"><h1>Kiểm tra định kỳ – Tin học THCS</h1><div class="mut">Trắc nghiệm · Đúng/Sai · Tự luận — làm trực tiếp trên máy</div></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn ghost sm" id="lkLt" href="luyentap.html" style="text-decoration:none">📚 Luyện tập</a><a class="btn ghost sm" id="lkKt" href="index.html" style="text-decoration:none">📝 Kiểm tra theo bài</a></div>
   </div>
   <div class="card">
     <h2>🔑 Nhập mã kiểm tra thầy cô cho</h2>
@@ -278,8 +278,8 @@ input.num{width:220px;font-size:1.3em;font-weight:800;text-align:right;border:2p
       <button class="btn sm" id="cImport">📥 Nhập điểm Claude + Gemini</button>
       <button class="btn sm" id="cLockAll">✅ Chốt các bài hai AI thống nhất</button>
       <button class="btn ghost sm" id="cXls">📊 Tải bảng điểm Excel</button>
-      <button class="btn ghost sm" id="cDocAll">📦 Tải bài cả lớp (1 tệp Word)</button>
-      <button class="btn ghost sm" id="cZip">🗂️ Tải từng bài (tệp nén .zip)</button>
+      <button class="btn sm" id="cZip" title="Mỗi em một tệp Word, tên tệp: STT_Họ và tên_Lớp">🗂️ Tải bài cả lớp (tệp nén .zip)</button>
+      <button class="btn ghost sm" id="cDocAll" title="Tất cả bài gộp trong một tệp Word, mỗi em một trang">📄 Gộp 1 tệp Word</button>
     </div>
     <div style="overflow:auto;max-height:70vh"><table class="tbl" id="cTbl"></table></div>
     <p class="mini">Phần viết do <b>Claude</b> và <b>Gemini</b> cùng chấm: lệch không quá 0,5 điểm → <span class="st c">🤝 thống nhất</span> (tự lấy điểm cao hơn), thầy chốt cả loạt; lệch từ 0,75 điểm trở lên → <span class="st w" style="background:#fdecec;color:#c62828">⚖️ lệch điểm</span>, thầy mở bài để chọn điểm. <span class="st k">✅ đã chốt</span> là điểm chính thức. Bấm vào một dòng để xem bài, lý do chấm của từng AI và sửa điểm.</p>
@@ -1256,7 +1256,7 @@ $("cImport").onclick = function(){
 var TRUONG = "TRƯỜNG THCS HỒ XUÂN HƯƠNG";
 function khongDau(t){ return String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").replace(/[^A-Za-z0-9 _-]+/g, "").trim().replace(/\s+/g, "_"); }
 function sachTen(t){ return String(t || "").replace(/[\\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim(); }
-function tenTep(st, coLop){ var b = st.b; return (coLop ? sachTen(b.lop) + "_" : "") + ("0" + b.stt).slice(-2) + "_" + sachTen(b.ten); }   /* ví dụ: 01_Nguyễn Văn An */
+function tenTep(st){ var b = st.b; return ("0" + b.stt).slice(-2) + "_" + sachTen(b.ten) + "_" + sachTen(b.lop); }   /* ví dụ: 01_Nguyễn Văn An_8A */
 function baiHtml(st){
   var b = st.b, ex = examOf(b.de), f = finalOf(st), a = b.tl || {}, it = b.may.it || {}, h = "";
   var td = "border:1px solid #777;padding:3px 6px;vertical-align:top", th = td + ";background:#e8eef6;font-weight:bold";
@@ -1326,8 +1326,9 @@ function zipFiles(files){
 function taiBai(list, kieu){
   list = (list || []).filter(Boolean);
   if(!list.length){ toast("Chưa có bài nào để tải – thầy chọn đề, lớp rồi bấm 🔄 Tải bài mới."); return; }
+  list = list.slice().sort(function(x, y){ return String(x.b.lop).localeCompare(String(y.b.lop)) || (+x.b.stt || 0) - (+y.b.stt || 0); });
   var de = list[0].b.de, lop = $("cLop").value || list[0].b.lop;
-  if(kieu === "mot"){ download(tenTep(list[0], true) + ".doc", docWord([baiHtml(list[0])]), "application/msword"); return; }
+  if(kieu === "mot"){ download(tenTep(list[0]) + ".doc", docWord([baiHtml(list[0])]), "application/msword"); return; }
   if(kieu === "lop"){ download("BaiLam_" + khongDau(de) + "_" + khongDau(lop) + ".doc", docWord(list.map(baiHtml)), "application/msword"); toast("📦 Đã tải " + list.length + " bài trong một tệp Word (mỗi em một trang)."); return; }
   var blob = zipFiles(list.map(function(st){ return { name: tenTep(st) + ".doc", text: docWord([baiHtml(st)]) }; }));
   var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "BaiLam_" + khongDau(de) + "_" + khongDau(lop) + ".zip"; document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
