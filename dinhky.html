@@ -275,14 +275,16 @@ input.num{width:220px;font-size:1.3em;font-weight:800;text-align:right;border:2p
     <div id="cSum" class="mut" style="margin:12px 0"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
       <button class="btn org sm" id="cExport">📤 Xuất bài tự luận cho AI chấm</button>
-      <button class="btn sm" id="cImport">📥 Nhập điểm Claude + Gemini</button>
-      <button class="btn sm" id="cLockAll">✅ Chốt các bài hai AI thống nhất</button>
+      <button class="btn sm" id="cImpC" style="background:#c8662b">📥 Nhập điểm 🟠 Claude</button>
+      <button class="btn sm" id="cImpG" style="background:#2f6fd0">📥 Nhập điểm 🔷 Gemini</button>
+      <button class="btn sm" id="cTN" style="background:#c62828">⚖️ Thầy thống nhất các ý lệch</button>
+      <button class="btn sm" id="cLockAll">✅ Chốt các bài đã thống nhất</button>
       <button class="btn ghost sm" id="cXls">📊 Tải bảng điểm Excel</button>
       <button class="btn sm" id="cZip" title="Mỗi em một tệp Word, tên tệp: STT_Họ và tên_Lớp">🗂️ Tải bài cả lớp (tệp nén .zip)</button>
       <button class="btn ghost sm" id="cDocAll" title="Tất cả bài gộp trong một tệp Word, mỗi em một trang">📄 Gộp 1 tệp Word</button>
     </div>
     <div style="overflow:auto;max-height:70vh"><table class="tbl" id="cTbl"></table></div>
-    <p class="mini">Phần viết do <b>Claude</b> và <b>Gemini</b> cùng chấm: lệch không quá 0,5 điểm → <span class="st c">🤝 thống nhất</span> (tự lấy điểm cao hơn), thầy chốt cả loạt; lệch từ 0,75 điểm trở lên → <span class="st w" style="background:#fdecec;color:#c62828">⚖️ lệch điểm</span>, thầy mở bài để chọn điểm. <span class="st k">✅ đã chốt</span> là điểm chính thức. Bấm vào một dòng để xem bài, lý do chấm của từng AI và sửa điểm.</p>
+    <p class="mini">Phần viết do <b>Claude</b> và <b>Gemini</b> chấm <b>độc lập</b> (nhập điểm từng AI riêng, mỗi AI một cột). Khi đủ cả hai mới thống nhất: lệch không quá 0,5 điểm → <span class="st c">🤝 thống nhất</span> (tự lấy điểm cao hơn); lệch từ 0,75 điểm trở lên → <span class="st w" style="background:#fdecec;color:#c62828">⚖️ lệch điểm</span>, thầy bấm <b>⚖️ Thầy thống nhất các ý lệch</b> để chọn điểm. Chỉ bài đã thống nhất hết mới chốt được. <span class="st k">✅ đã chốt</span> là điểm chính thức. Bấm vào một dòng để xem bài, lý do chấm của từng AI và sửa điểm.</p>
   </div>
 </section>
 
@@ -837,10 +839,13 @@ function sendRec(){
 /* ======================= GIÁO VIÊN ======================= */
 var GV = { recs: [], roster: {}, ai: sget("dk_ai_v1", {}) };   /* ai[phien][slot] = { claude:{d,ly}, gemini:{d,ly} } */
 var AIN = { claude: "Claude", gemini: "Gemini" };
-function aiPick(a){ /* hai AI lệch ≤ 0,5 điểm → tự thống nhất lấy điểm CAO HƠN; lệch từ 0,75 trở lên → chờ giáo viên */
+function aiPick(a){ /* Claude và Gemini chấm ĐỘC LẬP. Chỉ thống nhất khi đủ cả hai:
+   lệch ≤ 0,5 điểm → tự lấy điểm CAO HƠN; lệch từ 0,75 trở lên → giáo viên chọn điểm (a.gv) */
   if(!a) return null; var c = a.claude, g = a.gemini;
-  if(c && g){ var df = Math.abs(c.d - g.d); return { d: Math.max(c.d, g.d), ok: df <= 0.5 + 1e-9, df: df, n: 2 }; }
-  if(c || g){ var x = c || g; return { d: x.d, ok: false, df: null, n: 1 }; }
+  if(c && g){ var df = Math.abs(c.d - g.d);
+    if(a.gv) return { d: a.gv.d, ok: true, df: df, n: 2, gv: true };
+    return df <= 0.5 + 1e-9 ? { d: Math.max(c.d, g.d), ok: true, df: df, n: 2 } : { d: null, ok: false, df: df, n: 2 }; }
+  if(c || g) return { d: null, ok: false, df: null, n: 1 };
   return null;
 }
 var KCODES = "dk_codes_v1";
@@ -1089,14 +1094,17 @@ $("cMa").onchange = renderTbl;
 function finalOf(st){
   var ex = examOf(st.b.de), m = st.b.may, out = { it: {}, p: { I: m.p.I, II: m.p.II, III: 0 }, need: 0, cl: 0, tong: 0, muc: { B: 0, H: 0, V: 0 }, cau: {} };
   var cc = GV.ai[st.b.phien] || {}, ch = st.c ? st.c.diem || {} : {};
-  out.lech = 0; out.thieu = 0;
+  out.lech = 0; out.thieu = 0; out.chua = 0; out.tn = 0; out.nViet = 0; out.ai = { claude: { s: 0, n: 0 }, gemini: { s: 0, n: 0 } };
   Object.keys(m.it).forEach(function(k){
     var x = m.it[k], v = x.d, src = "may";
     if(x.phan === "III" && !x.sure){
       if(ch[k] != null){ v = ch[k]; src = (st.c.nguon || {})[k] || "gv"; }
       else{ var ap = aiPick(cc[k]);
-        if(ap){ v = ap.d; src = "ai"; if(ap.n < 2) out.thieu++; else if(!ap.ok) out.lech++; else out.cl++; }
-        else out.need++; }
+        if(ap && ap.ok){ v = ap.d; src = ap.gv ? "gv" : "ai"; out.cl++; out.tn += v; }
+        else{ out.chua++; if(!ap) out.need++; else if(ap.n < 2) out.thieu++; else out.lech++; }   /* chưa thống nhất: tạm tính điểm máy gợi ý */
+      }
+      ["claude", "gemini"].forEach(function(w){ var A = cc[k] || {}; if(A[w]){ out.ai[w].s += A[w].d; out.ai[w].n++; } });
+      out.nViet++;
     } else if(ch[k] != null){ v = ch[k]; src = "gv"; }
     out.it[k] = { d: v, src: src, max: x.max };
     if(x.phan === "III"){ out.p.III += v; out.cau[x.cau] = (out.cau[x.cau] || 0) + v; }
@@ -1116,18 +1124,25 @@ function renderTbl(){
   var list = students(de, lop), tl = ex.phan.filter(function(p){ return p.loai === "tl"; })[0];
   var tp = tnParts(ex);
   var h = "<tr><th>Lớp</th><th>STT</th><th class='l'>Họ và tên</th>" + tp.map(function(q){ return "<th>" + esc(q.nm) + "<br><span class='mini'>/" + fmtD(q.max) + "</span></th>"; }).join("");
-  if(tl) tl.cau.forEach(function(c, i){ h += "<th>Câu " + (i + 1) + "<br><span class='mini'>/" + fmtD(c.d) + "</span></th>"; });
+  if(tl) h += "<th>Tự luận<br><span class='mini'>máy chấm</span></th><th style='background:#f6ece4'>🟠 Claude<br><span class='mini'>phần viết</span></th><th style='background:#e6eefc'>🔷 Gemini<br><span class='mini'>phần viết</span></th><th style='background:#e7f6ec'>🤝 Thống nhất<br><span class='mini'>phần viết</span></th>";
   h += "<th>Tổng<br><span class='mini'>/10</span></th><th>Trạng thái</th><th>Rời bài</th></tr>";
   var nk = 0, nw = 0, nl = 0, nr = 0;
   list.forEach(function(st, i){
     var f = finalOf(st); if(f.locked) nk++; else if(f.need || f.thieu) nw++; else if(f.lech) nl++; else nr++;
     h += "<tr class='row' data-i='" + i + "'><td>" + esc(st.b.lop) + "</td><td>" + st.b.stt + "</td><td class='l'>" + esc(st.b.ten) + (st.b.lan > 1 ? " <span class='mini'>(nộp " + st.b.lan + " lần)</span>" : "") + "</td>" + tp.map(function(q){ return "<td>" + fmtD(f.p[q.k]) + "</td>"; }).join("");
-    if(tl) tl.cau.forEach(function(c){ h += "<td>" + fmtD(f.cau[c.id] || 0) + "</td>"; });
-    h += "<td><b>" + fmtD(f.tong) + "</b></td><td>" + statusHtml(f) + "</td><td>" + (st.b.vp || 0) + (st.b.ly === "roibai" ? " ⚠️" : "") + " <button class='btn ghost sm' data-tai='" + i + "' title='Tải bài của em này (Word)' style='padding:2px 8px'>📄</button></td></tr>";
+    if(tl){
+      var mayTL = 0; Object.keys(st.b.may.it).forEach(function(k){ var x = st.b.may.it[k]; if(x.phan === "III" && x.sure) mayTL += f.it[k].d; });
+      var aiO = function(w){ var a = f.ai[w]; return !f.nViet ? "–" : !a.n ? "<span class='mut'>chưa chấm</span>" : fmtD(a.s) + (a.n < f.nViet ? " <span class='mini'>(" + a.n + "/" + f.nViet + " ý)</span>" : ""); };
+      h += "<td>" + fmtD(mayTL) + "</td><td style='background:#fbf6f1'>" + aiO("claude") + "</td><td style='background:#f3f7fd'>" + aiO("gemini") + "</td>"
+        + "<td style='background:#f2faf4'>" + (!f.nViet ? "–" : f.locked ? fmtD(f.p.III - mayTL) : f.chua ? (f.lech ? "<b style='color:#c62828'>⚖️ " + f.lech + " ý lệch</b>" : "<span class='mut'>chờ đủ 2 AI</span>") : "<b>" + fmtD(f.tn) + "</b>") + "</td>";
+    }
+    h += "<td>" + (f.locked || !f.chua ? "<b>" + fmtD(f.tong) + "</b>" : "<span class='mut' title='Điểm tạm: phần viết chưa thống nhất đang tính theo máy gợi ý'>" + fmtD(f.tong) + "*</span>") + "</td><td>" + statusHtml(f) + "</td><td>" + (st.b.vp || 0) + (st.b.ly === "roibai" ? " ⚠️" : "") + " <button class='btn ghost sm' data-tai='" + i + "' title='Tải bài của em này (Word)' style='padding:2px 8px'>📄</button></td></tr>";
   });
   if(!list.length) h += "<tr><td colspan='12' class='mut'>Chưa có bài nộp cho đề này.</td></tr>";
   $("cTbl").innerHTML = h; GV.list = list;
-  $("cSum").innerHTML = "<b>" + list.length + "</b> bài · <b>" + nk + "</b> đã chốt · <b>" + nr + "</b> sẵn sàng chốt · <b style='color:#c62828'>" + nl + "</b> lệch điểm cần thầy xem · " + nw + " chưa đủ hai AI chấm";
+  var nLechY = 0; list.forEach(function(st){ var f = finalOf(st); if(!f.locked) nLechY += f.lech; });
+  $("cSum").innerHTML = "<b>" + list.length + "</b> bài · <b>" + nk + "</b> đã chốt · <b>" + nr + "</b> sẵn sàng chốt · <b style='color:#c62828'>" + nl + "</b> bài có ý lệch cần thầy thống nhất · " + nw + " chưa đủ hai AI chấm <span class='mini'>(* điểm tạm)</span>";
+  $("cTN").textContent = "⚖️ Thầy thống nhất các ý lệch" + (nLechY ? " (" + nLechY + ")" : "");
 }
 $("cTbl").addEventListener("click", function(e){ var t = e.target.closest("[data-tai]"); if(t){ e.stopPropagation(); taiBai([GV.list[+t.dataset.tai]], "mot"); return; } var r = e.target.closest("tr.row"); if(r) openGrade(+r.dataset.i); });
 
@@ -1141,7 +1156,7 @@ function highlight(text, groups){
 }
 function openGrade(i){
   var st = GV.list[i], ex = examOf(st.b.de), f = finalOf(st), cc = GV.ai[st.b.phien] || {};
-  GV.edit = { i: i, v: {} };
+  GV.edit = { i: i, v: {}, chua: {} };
   Object.keys(f.it).forEach(function(k){ GV.edit.v[k] = f.it[k].d; });
   var h = "<div style='display:flex;gap:10px;align-items:center'><h2 style='flex:1;margin:0'>" + esc(st.b.stt + ". " + st.b.ten) + " · Lớp " + esc(st.b.lop) + "</h2><button class='btn ghost sm' onclick='dlgClose()'>Đóng ✕</button></div>";
   h += "<div class='mini'>Nộp lúc " + new Date(st.b.kt).toLocaleString("vi-VN") + " · rời bài " + (st.b.vp || 0) + " lần" + (st.b.ly === "hetgio" ? " · nộp khi hết giờ" : st.b.ly === "roibai" ? " · ⚠️ tự nộp do rời bài" : "") + "</div>";
@@ -1161,23 +1176,28 @@ function openGrade(i){
       if(!m.sure){
         var A = cc[o.id] || {}, ap = aiPick(A);
         ["claude", "gemini"].forEach(function(w){ h += "<span class='pill' style='background:" + (w === "claude" ? "#f6ece4" : "#e6eefc") + "'>" + (w === "claude" ? "🟠 Claude: " : "🔷 Gemini: ") + (A[w] ? "<b>" + fmtD(A[w].d) + "</b>" + (A[w].ly ? " – " + esc(A[w].ly) : "") : "<i>chưa chấm</i>") + "</span>"; });
-        if(ap && ap.n === 2) h += "<span class='pill' style='background:" + (ap.ok ? "#e7f6ec;color:#1f8a4c" : "#fdecec;color:#c62828") + "'>" + (ap.ok ? (ap.df ? "🤝 lệch " + fmtD(ap.df) + " → lấy điểm cao hơn: " + fmtD(ap.d) : "🤝 hai AI cùng cho " + fmtD(ap.d)) : "⚖️ lệch " + fmtD(ap.df) + " điểm – thầy quyết định") + "</span>";
+        if(ap && ap.n === 2) h += "<span class='pill' style='background:" + (ap.ok ? "#e7f6ec;color:#1f8a4c" : "#fdecec;color:#c62828") + "'>" + (ap.gv ? "👨‍🏫 thầy đã thống nhất: " + fmtD(ap.d) : ap.ok ? (ap.df ? "🤝 lệch " + fmtD(ap.df) + " → lấy điểm cao hơn: " + fmtD(ap.d) : "🤝 hai AI cùng cho " + fmtD(ap.d)) : "⚖️ lệch " + fmtD(ap.df) + " điểm – thầy chọn điểm") + "</span>";
+        else if(ap && ap.n === 1) h += "<span class='pill' style='background:#fff4e0;color:#8a5a00'>⏳ chờ AI còn lại chấm</span>";
+        if((!ap || !ap.ok) && f.it[o.id].src !== "gv") GV.edit.chua[o.id] = 1;
       }
       h += "<span style='margin-left:auto'>Điểm chốt:</span><span class='qb' data-k='" + o.id + "'>";
-      for(var v = 0; v <= o.d + 1e-9; v += 0.25) h += "<button data-q='" + v + "' class='" + (Math.abs(GV.edit.v[o.id] - v) < 1e-9 ? "sel" : "") + "'>" + fmtD(v) + "</button>";
+      for(var v = 0; v <= o.d + 1e-9; v += 0.25) h += "<button data-q='" + v + "' class='" + (!GV.edit.chua[o.id] && Math.abs(GV.edit.v[o.id] - v) < 1e-9 ? "sel" : "") + "'>" + fmtD(v) + "</button>";
       h += "</span></div></div>";
     });
   }); });
   h += "<div class='foot'><span id='gTot' class='big' style='font-size:1.4em'></span><div class='sp'></div><button class='btn ghost' id='gTai'>📄 Tải bài này</button><button class='btn ghost' onclick='dlgClose()'>Đóng</button><button class='btn org' id='gLock'>✅ Chốt điểm bài này</button></div>";
   dlg(h, true); updTot();
   $("gTai").onclick = function(){ taiBai([st], "mot"); };
-  $("ovBox").querySelectorAll(".qb").forEach(function(q){ q.onclick = function(e){ var b = e.target.closest("button"); if(!b) return; GV.edit.v[q.dataset.k] = +b.dataset.q; q.querySelectorAll("button").forEach(function(x){ x.classList.toggle("sel", x === b); }); updTot(); }; });
-  $("gLock").onclick = function(){ lockOne(st, GV.edit.v).then(function(){ dlgClose(); renderTbl(); }); };
+  $("ovBox").querySelectorAll(".qb").forEach(function(q){ q.onclick = function(e){ var b = e.target.closest("button"); if(!b) return; GV.edit.v[q.dataset.k] = +b.dataset.q; delete GV.edit.chua[q.dataset.k]; q.querySelectorAll("button").forEach(function(x){ x.classList.toggle("sel", x === b); }); updTot(); }; });
+  $("gLock").onclick = function(){
+    var con = Object.keys(GV.edit.chua).length;
+    if(con){ toast("Còn " + con + " ý phần viết chưa thống nhất (lệch nhiều hoặc chưa đủ hai AI chấm) – thầy bấm chọn điểm cho các ý đó rồi mới chốt."); return; }
+    lockOne(st, GV.edit.v).then(function(){ dlgClose(); renderTbl(); }); };
 }
 function updTot(){ var st = GV.list[GV.edit.i], t = 0; Object.keys(GV.edit.v).forEach(function(k){ t += GV.edit.v[k]; }); $("gTot").textContent = "Tổng: " + fmtD(t) + " / 10"; }
 function chamRec(st, v){
   var m = st.b.may.it, nguon = {}, cc = GV.ai[st.b.phien] || {}, tong = 0, diem = {};
-  Object.keys(m).forEach(function(k){ diem[k] = v[k]; tong += v[k]; if(m[k].phan === "III" && !m[k].sure){ var A = cc[k] || {}; nguon[k] = { gv: v[k], claude: A.claude ? A.claude.d : null, gemini: A.gemini ? A.gemini.d : null }; } });
+  Object.keys(m).forEach(function(k){ diem[k] = v[k]; tong += v[k]; if(m[k].phan === "III" && !m[k].sure){ var A = cc[k] || {}; nguon[k] = { gv: v[k], claude: A.claude ? A.claude.d : null, gemini: A.gemini ? A.gemini.d : null, thong_nhat: A.gv ? "gv" : (A.claude && A.gemini ? "ai" : null) }; } });
   return { id: st.b.phien + "-c" + rid(), t: "cham", phien: st.b.phien, de: st.b.de, lop: st.b.lop, stt: st.b.stt, ten: st.b.ten, diem: diem, nguon: nguon, tong: Math.round(tong * 100) / 100, luc: new Date().toISOString() };
 }
 function lockOne(st, v){
@@ -1188,8 +1208,8 @@ function lockOne(st, v){
 $("cLockAll").onclick = function(){
   var rs = [];
   (GV.list || []).forEach(function(st){ var f = finalOf(st); if(!ready(f)) return; var v = {}; Object.keys(f.it).forEach(function(k){ v[k] = f.it[k].d; }); rs.push(chamRec(st, v)); });
-  if(!rs.length){ toast("Chưa có bài nào được hai AI chấm thống nhất. Bài ⚖️ lệch điểm thầy mở ra chọn điểm rồi chốt từng bài."); return; }
-  if(!confirm("Chốt điểm " + rs.length + " bài mà Claude và Gemini chấm thống nhất (lệch không quá 0,5 điểm, lấy điểm cao hơn)?")) return;
+  if(!rs.length){ toast("Chưa có bài nào thống nhất xong phần viết. Bài ⚖️ lệch điểm: bấm ⚖️ Thầy thống nhất các ý lệch."); return; }
+  if(!confirm("Chốt điểm " + rs.length + " bài đã thống nhất xong phần viết (hai AI lệch không quá 0,5 điểm → lấy điểm cao hơn; ý lệch nhiều → theo điểm thầy chọn)?")) return;
   NET.post("dk", rs, true).then(function(d){ if(!d || d.ok === false) throw 0; GV.recs = GV.recs.concat(rs); renderTbl(); toast("✅ Đã chốt " + rs.length + " bài."); })
     .catch(function(){ toast("⚠️ Chưa lưu được – thử lại."); });
 };
@@ -1214,15 +1234,20 @@ $("cExport").onclick = function(){
     + "4. Với các ý cùng nhóm \"Lợi ích\" của cùng một học sinh (cùng ma), hai lợi ích trùng ý thì chỉ tính điểm một lần.\n"
     + "5. Không bỏ sót dòng nào. Trả về DUY NHẤT một khối JSON (mảng), mỗi dòng bài làm một phần tử, theo mẫu:\n"
     + "[{\"ma\":\"...\",\"cau\":\"TL1a\",\"diem\":0.75,\"ly_do\":\"nêu được hai trạng thái nhưng chưa nói tới 0 và 1\"}]\n"
-    + "   ly_do viết ngắn (dưới 20 chữ), tiếng Việt.\n\n"
+    + "   ly_do viết ngắn (dưới 20 chữ), tiếng Việt, KHÔNG dùng dấu ngoặc kép bên trong ly_do.\n"
+    + "   Mỗi phần tử viết trên MỘT dòng. Nếu quá dài không trả lời hết một lần, hãy dừng ở cuối một phần tử trọn vẹn; tôi sẽ gõ \"tiếp tục\" để bạn viết tiếp phần còn lại.\n\n"
     + "========================================================================\nĐỀ VÀ HƯỚNG DẪN CHẤM\n";
   slots.forEach(function(x){ t += "\n[" + x.s.id + "] tối đa " + fmtD(x.s.d) + " điểm\n  Câu hỏi: " + x.c.hoi + "\n  Ý cần trả lời: " + x.s.nhan + "\n  Hướng dẫn chấm: " + (x.s.hd || "") + "\n"; });
   t += "\n========================================================================\nBÀI LÀM (" + lines.length + " dòng)\n" + lines.join("\n") + "\n";
   download("ChamTuLuan_" + de + (lop ? "_" + lop : "") + "_" + dayKey() + ".txt", t);
-  dlg("<h2>📤 Đã tải tệp cho AI chấm</h2><p>Dùng <b>cùng một tệp</b> cho cả hai AI:</p><ol><li><b>🟠 Claude:</b> mở <b>claude.ai</b>, tạo cuộc trò chuyện mới, đính kèm tệp <b>ChamTuLuan_….txt</b>, gõ: <i>“Chấm giúp tôi tệp này theo đúng yêu cầu trong tệp.”</i></li><li><b>🔷 Gemini:</b> mở <b>gemini.google.com</b>, chọn mô hình Pro, đính kèm cùng tệp, gõ cùng câu như trên.</li><li>Mỗi AI trả về một khối JSON → bấm <b>Sao chép</b> ở khối đó → quay lại đây bấm <b>📥 Nhập điểm Claude + Gemini</b> → dán kết quả Claude vào ô Claude, kết quả Gemini vào ô Gemini (dán là tự ghi nhận) → bấm <b>Chấp nhận</b>.</li><li>Phần mềm tự so sánh: hai AI lệch ≤ 0,5 điểm → tự lấy điểm cao hơn, thầy bấm <b>✅ Chốt các bài hai AI thống nhất</b>; lệch từ 0,75 trở lên → bài ⚖️, thầy mở ra chọn điểm.</li></ol><p class='mini'>Tệp chỉ chứa câu trả lời và mã phiên làm bài, không có họ tên học sinh. " + lines.length + " câu trả lời cần chấm.</p><button class='btn' onclick='dlgClose()'>Đã hiểu</button>");
+  dlg("<h2>📤 Đã tải tệp cho AI chấm</h2><p>Dùng <b>cùng một tệp</b> cho cả hai AI:</p><ol><li><b>🟠 Claude:</b> mở <b>claude.ai</b>, tạo cuộc trò chuyện mới, đính kèm tệp <b>ChamTuLuan_….txt</b>, gõ: <i>“Chấm giúp tôi tệp này theo đúng yêu cầu trong tệp.”</i></li><li><b>🔷 Gemini:</b> mở <b>gemini.google.com</b>, chọn mô hình Pro, đính kèm cùng tệp, gõ cùng câu như trên.</li><li>Mỗi AI trả về một khối JSON → bấm <b>Sao chép</b> ở khối đó (nếu AI chia nhiều khối hoặc trả lời bị cắt, gõ <i>“tiếp tục”</i> rồi dán nối tất cả vào cùng một ô) → quay lại đây bấm <b>📥 Nhập điểm Claude + Gemini</b> → dán kết quả Claude vào ô Claude, kết quả Gemini vào ô Gemini (dán là tự ghi nhận) → bấm <b>Chấp nhận</b>.</li><li>Phần mềm tự so sánh: hai AI lệch ≤ 0,5 điểm → tự lấy điểm cao hơn, thầy bấm <b>✅ Chốt các bài hai AI thống nhất</b>; lệch từ 0,75 trở lên → bài ⚖️, thầy mở ra chọn điểm.</li></ol><p class='mini'>Tệp chỉ chứa câu trả lời và mã phiên làm bài, không có họ tên học sinh. " + lines.length + " câu trả lời cần chấm.</p><button class='btn' onclick='dlgClose()'>Đã hiểu</button>");
 };
-$("cImport").onclick = function(){
-  var maxOf = {}; Object.keys(EXAMS).forEach(function(id){ slotsOf(EXAMS[id]).forEach(function(x){ maxOf[x.s.id] = x.s.d; }); });
+function nhapAI(only){
+  /* điểm tối đa của từng ý theo ĐÚNG đề của bài đó (các đề khác nhau có ý cùng tên TL1a… nhưng điểm khác nhau) */
+  var deCua = {}; (GV.recs || []).forEach(function(r){ if(r && r.t === "bai" && r.phien) deCua[r.phien] = r.de; }); (GV.list || []).forEach(function(st){ deCua[st.b.phien] = st.b.de; });
+  var maxDe = {}, maxBat = {};
+  Object.keys(EXAMS).forEach(function(id){ maxDe[id] = {}; slotsOf(EXAMS[id]).forEach(function(x){ maxDe[id][x.s.id] = x.s.d; maxBat[x.s.id] = Math.max(maxBat[x.s.id] || 0, x.s.d); }); });
+  function maxCua(ma, cau){ var de = deCua[ma]; return de && maxDe[de] ? maxDe[de][cau] : maxBat[cau]; }
   var got = { claude: null, gemini: null };
   function col(w, color){
     return "<div style='flex:1;min-width:280px;border:2px solid " + color + ";border-radius:16px;padding:12px'>"
@@ -1230,44 +1255,108 @@ $("cImport").onclick = function(){
       + "<textarea id='imTx_" + w + "' class='ta' style='min-height:180px;font-family:Consolas,monospace;font-size:.75em;margin-top:8px' placeholder='Dán (Ctrl+V) kết quả " + AIN[w] + " vào đây…'></textarea>"
       + "<div style='display:flex;gap:8px;margin-top:8px'><button class='btn sm' id='imRec_" + w + "'>✓ Ghi nhận</button><button class='btn ghost sm' id='imClr_" + w + "'>Xoá</button></div></div>";
   }
-  dlg("<h2>📥 Nhập điểm AI chấm</h2><p class='mut'>Dán kết quả của từng AI vào đúng ô (dán xong là tự ghi nhận). Khi đủ cả hai, bấm <b>Chấp nhận</b>.</p>"
-    + "<div style='display:flex;gap:14px;flex-wrap:wrap'>" + col("claude", "#f0c9a8") + col("gemini", "#b9cde4") + "</div>"
+  dlg("<h2>📥 Nhập điểm " + (only === "claude" ? "🟠 Claude" : "🔷 Gemini") + " chấm</h2><p class='mut'>Dán kết quả của " + (only === "claude" ? "Claude" : "Gemini") + " vào ô (dán xong là tự ghi nhận; AI trả lời nhiều đoạn thì dán nối các đoạn vào cùng ô) rồi bấm <b>Chấp nhận</b>. Điểm của mỗi AI được lưu riêng, không ghi đè điểm của AI kia; nhập AI còn lại lúc nào cũng được.</p>"
+    + "<div style='display:flex;gap:14px;flex-wrap:wrap'>" + (only === "claude" ? col("claude", "#f0c9a8") : col("gemini", "#b9cde4")) + "</div>"
     + "<div class='foot'><span id='imSum' class='mut'></span><div class='sp'></div><button class='btn ghost' onclick='dlgClose()'>Huỷ</button><button class='btn org' id='imOk' disabled>✅ Chấp nhận</button></div>", true);
+  /* đọc "dễ tính": nhận cả khi AI chia nhiều khối, kèm lời dẫn, dấu ngoặc kép cong, dấu phẩy thừa, khối cuối bị cắt… */
   function parse(s){
-    var a = s.indexOf("["), b = s.lastIndexOf("]"); if(a < 0 || b < a) return null;
-    try{ var arr = JSON.parse(s.slice(a, b + 1)); return Array.isArray(arr) ? arr : null; }catch(e){ return null; }
+    s = String(s || "").replace(/[\u201c\u201d\u201e\u00ab\u00bb]/g, '"').replace(/[\u2018\u2019]/g, "'");
+    var re = /\{\s*["']?(ma|cau|diem|ly_do)["']?\s*:/g, starts = [], m;
+    while((m = re.exec(s))) starts.push(m.index);
+    if(!starts.length) return null;
+    var out = [], cut = 0;
+    starts.forEach(function(p, i){
+      var ch = s.slice(p, i + 1 < starts.length ? starts[i + 1] : s.length);
+      var f = function(k){
+        var x = new RegExp("[\"']?\\b" + k + "[\"']?\\s*:\\s*(?:\"([^\"\\n]*)\"|'([^'\\n]*)'|(-?[\\d.,]+))").exec(ch);
+        return x ? (x[1] != null ? x[1] : x[2] != null ? x[2] : x[3]) : null;
+      };
+      var ma = f("ma"), cau = f("cau"), diem = f("diem");
+      if(ma && cau && diem != null && diem !== "") out.push({ ma: ma.trim(), cau: cau.trim(), diem: diem, ly_do: f("ly_do") || "" }); else cut++;
+    });
+    out.cut = cut; return out;
   }
+  /* các ý viết cần chấm của danh sách bài đang mở – để báo AI còn thiếu ý nào */
+  var need = {};
+  (GV.list || []).forEach(function(st){ if(finalOf(st).locked) return; var ex = examOf(st.b.de); if(!ex) return;
+    slotsOf(ex).forEach(function(x){ if(x.s.k === "text" && String((st.b.tl || {})[x.s.id] || "").trim()) need[st.b.phien + "|" + x.s.id] = 1; }); });
   function upd(){
     var c = got.claude, g = got.gemini;
     $("imOk").disabled = !c && !g;
-    $("imSum").innerHTML = !c && !g ? "" : (c && g ? "Đủ điểm của <b>Claude</b> và <b>Gemini</b> – bấm Chấp nhận để so sánh." : "Mới có điểm của <b>" + (c ? "Claude" : "Gemini") + "</b>. Có thể chấp nhận trước, nhập AI còn lại sau.");
+    $("imSum").innerHTML = "";
   }
   function rec(w){
     var arr = parse($("imTx_" + w).value), ok = [], bad = 0;
     if(!arr){ $("imSt_" + w).className = "st w"; $("imSt_" + w).style.cssText = "background:#fdecec;color:#c62828"; $("imSt_" + w).textContent = "❌ không đọc được – dán lại cả khối JSON"; got[w] = null; upd(); return; }
+    var seen = {};
     arr.forEach(function(x){
-      if(!x || !x.ma || !x.cau || maxOf[x.cau] == null){ bad++; return; }
-      ok.push({ ma: String(x.ma), cau: x.cau, d: q4(Math.max(0, Math.min(maxOf[x.cau], parseFloat(String(x.diem).replace(",", ".")) || 0))), ly: String(x.ly_do || "").slice(0, 160) });
+      var mx = x && x.ma && x.cau ? maxCua(String(x.ma), x.cau) : null;
+      if(mx == null){ bad++; return; }
+      var k = x.ma + "|" + x.cau; if(seen[k] != null) ok.splice(seen[k], 1, null);   /* trùng: lấy lần dán sau */
+      seen[k] = ok.length;
+      ok.push({ ma: String(x.ma), cau: x.cau, d: q4(Math.max(0, Math.min(mx, parseFloat(String(x.diem).replace(",", ".")) || 0))), ly: String(x.ly_do || "").slice(0, 160) });
     });
+    ok = ok.filter(Boolean); bad += arr.cut || 0;
+    var coMa = {}, thieu = 0, lienQuan = false; ok.forEach(function(x){ coMa[x.ma + "|" + x.cau] = 1; if(need[x.ma + "|" + x.cau]) lienQuan = true; });
+    if(lienQuan) Object.keys(need).forEach(function(k){ if(!coMa[k]) thieu++; });
     got[w] = ok.length ? ok : null;
-    var st = $("imSt_" + w); st.style.cssText = ""; st.className = ok.length ? "st k" : "st w";
-    st.textContent = ok.length ? "✅ đã ghi nhận " + ok.length + " điểm" + (bad ? " (bỏ " + bad + " dòng lỗi)" : "") : "chưa có điểm hợp lệ";
+    var st = $("imSt_" + w); st.style.cssText = ""; st.className = ok.length ? (thieu ? "st w" : "st k") : "st w";
+    st.textContent = ok.length ? "✅ đã ghi nhận " + ok.length + " điểm" + (bad ? " (bỏ " + bad + " dòng lỗi/bị cắt)" : "") : "chưa có điểm hợp lệ";
+    if(thieu){ st.textContent += " · còn thiếu " + thieu + " ý"; st.title = "AI chưa trả lời hết. Gõ “tiếp tục” cho AI, sao chép phần trả lời tiếp theo rồi dán NỐI vào cuối ô này."; }
     upd();
   }
-  ["claude", "gemini"].forEach(function(w){
+  [only].forEach(function(w){
     var t = $("imTx_" + w);
     t.addEventListener("paste", function(){ setTimeout(function(){ rec(w); }, 50); });
     $("imRec_" + w).onclick = function(){ rec(w); };
     $("imClr_" + w).onclick = function(){ t.value = ""; got[w] = null; $("imSt_" + w).className = "st w"; $("imSt_" + w).style.cssText = ""; $("imSt_" + w).textContent = "chưa có"; upd(); t.focus(); };
   });
-  setTimeout(function(){ $("imTx_claude").focus(); }, 50);
+  setTimeout(function(){ $("imTx_" + only).focus(); }, 50);
   $("imOk").onclick = function(){
     var n = 0;
-    ["claude", "gemini"].forEach(function(w){ (got[w] || []).forEach(function(x){ ((GV.ai[x.ma] = GV.ai[x.ma] || {})[x.cau] = GV.ai[x.ma][x.cau] || {})[w] = { d: x.d, ly: x.ly }; n++; }); });
+    [only].forEach(function(w){ (got[w] || []).forEach(function(x){ var A = ((GV.ai[x.ma] = GV.ai[x.ma] || {})[x.cau] = GV.ai[x.ma][x.cau] || {}); A[w] = { d: x.d, ly: x.ly }; if(A.gv) delete A.gv; n++; }); });
     sset("dk_ai_v1", GV.ai); dlgClose(); renderTbl();
     var dong = 0, lech = 0;
     Object.keys(GV.ai).forEach(function(m){ Object.keys(GV.ai[m]).forEach(function(k){ var p = aiPick(GV.ai[m][k]); if(p && p.n === 2){ if(p.ok) dong++; else lech++; } }); });
-    toast("✅ Đã nhận " + n + " điểm. " + dong + " ý hai AI thống nhất" + (lech ? ", " + lech + " ý lệch từ 0,75 điểm cần thầy xem" : "") + ".");
+    toast("✅ Đã nhận " + n + " điểm của " + (only === "claude" ? "Claude" : "Gemini") + ". " + (dong + lech ? dong + " ý hai AI thống nhất" + (lech ? ", " + lech + " ý lệch từ 0,75 điểm – bấm ⚖️ để thầy thống nhất" : "") : "Chờ nhập điểm của " + (only === "claude" ? "Gemini" : "Claude") + " để thống nhất") + ".");
+  };
+};
+
+$("cImpC").onclick = function(){ nhapAI("claude"); };
+$("cImpG").onclick = function(){ nhapAI("gemini"); };
+
+/* ---------- GIÁO VIÊN THỐNG NHẤT CÁC Ý HAI AI LỆCH NHIỀU (≥ 0,75 điểm) ---------- */
+$("cTN").onclick = function(){
+  var rows = [];
+  (GV.list || []).forEach(function(st){ if(finalOf(st).locked) return; var ex = examOf(st.b.de), cc = GV.ai[st.b.phien] || {};
+    slotsOf(ex).forEach(function(x){ var A = cc[x.s.id]; if(!A || !A.claude || !A.gemini) return;
+      if(Math.abs(A.claude.d - A.gemini.d) <= 0.5 + 1e-9) return;
+      rows.push({ st: st, ex: ex, x: x, A: A }); }); });
+  if(!rows.length){ toast("Không có ý nào hai AI chấm lệch từ 0,75 điểm trở lên."); return; }
+  var h = "<div style='display:flex;align-items:center;gap:10px'><h2 style='flex:1;margin:0'>⚖️ Thầy thống nhất " + rows.length + " ý hai AI chấm lệch nhiều</h2><button class='btn ghost sm' onclick='dlgClose()'>Đóng ✕</button></div>"
+    + "<p class='mut'>Mỗi ý: đọc bài làm, xem điểm và lý do của từng AI rồi bấm điểm thầy chọn. Ý nào chưa chọn thì vẫn để lệch, chưa chốt được.</p>";
+  rows.forEach(function(r, i){
+    var o = r.x.s, a = String(r.st.b.tl[o.id] || "");
+    h += "<div class='gslot'><div style='display:flex;gap:8px'><b style='flex:1'>" + esc(r.st.b.stt + ". " + r.st.b.ten) + " · Lớp " + esc(r.st.b.lop) + " — " + esc(o.nhan) + "</b><span class='tag pt'>" + fmtD(o.d) + " đ</span></div>"
+      + "<div class='stu'>" + (a.trim() ? highlight(a, kwList(r.ex, o)) : "<span class='mut'>(bỏ trống)</span>") + "</div>"
+      + (o.hd ? "<div class='hd'>📋 " + esc(o.hd) + "</div>" : "")
+      + "<div class='srcs'><span class='pill' style='background:#f6ece4'>🟠 Claude: <b>" + fmtD(r.A.claude.d) + "</b>" + (r.A.claude.ly ? " – " + esc(r.A.claude.ly) : "") + "</span>"
+      + "<span class='pill' style='background:#e6eefc'>🔷 Gemini: <b>" + fmtD(r.A.gemini.d) + "</b>" + (r.A.gemini.ly ? " – " + esc(r.A.gemini.ly) : "") + "</span>"
+      + "<span style='margin-left:auto'>Thầy chọn:</span><span class='qb' data-r='" + i + "'>";
+    for(var v = 0; v <= o.d + 1e-9; v += 0.25) h += "<button data-q='" + v + "' class='" + (r.A.gv && Math.abs(r.A.gv.d - v) < 1e-9 ? "sel" : "") + "'>" + fmtD(v) + "</button>";
+    h += "</span></div></div>";
+  });
+  h += "<div class='foot'><span id='tnDem' class='mut'></span><div class='sp'></div><button class='btn ghost' onclick='dlgClose()'>Huỷ</button><button class='btn org' id='tnLuu'>💾 Lưu điểm thầy thống nhất</button></div>";
+  dlg(h, true);
+  var chon = {};
+  rows.forEach(function(r, i){ if(r.A.gv) chon[i] = r.A.gv.d; });
+  var dem = function(){ $("tnDem").textContent = "Đã chọn " + Object.keys(chon).length + "/" + rows.length + " ý"; }; dem();
+  $("ovBox").querySelectorAll(".qb").forEach(function(q){ q.onclick = function(e){ var b = e.target.closest("button"); if(!b) return; chon[+q.dataset.r] = +b.dataset.q; q.querySelectorAll("button").forEach(function(x){ x.classList.toggle("sel", x === b); }); dem(); }; });
+  $("tnLuu").onclick = function(){
+    var n = Object.keys(chon).length;
+    Object.keys(chon).forEach(function(i){ rows[+i].A.gv = { d: chon[i], luc: new Date().toISOString() }; });
+    sset("dk_ai_v1", GV.ai); dlgClose(); renderTbl();
+    toast("✅ Đã lưu " + n + " ý thầy thống nhất." + (n < rows.length ? " Còn " + (rows.length - n) + " ý chưa chọn." : " Có thể bấm ✅ Chốt các bài đã thống nhất."));
   };
 };
 
@@ -1362,11 +1451,13 @@ $("cXls").onclick = function(){
   var tp = tnParts(ex);
   var h = "<tr><th>Lớp</th><th>STT</th><th>Họ và tên</th>" + tp.map(function(q){ return "<th>" + esc(q.nm) + " (" + fmtD(q.max) + "đ)</th>"; }).join("");
   if(tl) tl.cau.forEach(function(c, i){ h += "<th>TL Câu " + (i + 1) + " (" + fmtD(c.d) + "đ)</th>"; });
+  if(tl) h += "<th>Phần viết – Claude</th><th>Phần viết – Gemini</th>";
   h += "<th>Tổng điểm</th><th>Biết</th><th>Hiểu</th><th>Vận dụng</th><th>Rời bài</th><th>Trạng thái</th></tr>";
   list.forEach(function(st){
     var f = finalOf(st);
     h += "<tr><td>" + esc(st.b.lop) + "</td><td>" + st.b.stt + "</td><td>" + esc(st.b.ten) + "</td>" + tp.map(function(q){ return "<td>" + fmtD(f.p[q.k]) + "</td>"; }).join("");
     if(tl) tl.cau.forEach(function(c){ h += "<td>" + fmtD(f.cau[c.id] || 0) + "</td>"; });
+    if(tl) ["claude", "gemini"].forEach(function(w){ var a = f.ai[w]; h += "<td>" + (a.n ? fmtD(a.s) + (a.n < f.nViet ? " (" + a.n + "/" + f.nViet + " ý)" : "") : "") + "</td>"; });
     h += "<td><b>" + fmtD(f.tong) + "</b></td><td>" + fmtD(f.muc.B || 0) + "</td><td>" + fmtD(f.muc.H || 0) + "</td><td>" + fmtD(f.muc.V || 0) + "</td><td>" + (st.b.vp || 0) + "</td><td>" + statusTxt(f) + "</td></tr>";
   });
   var html = "<html xmlns:x='urn:schemas-microsoft-com:office:excel'><head><meta charset='utf-8'></head><body><h3>" + esc(ex.ten) + ($("cLop").value ? " – Lớp " + esc($("cLop").value) : "") + "</h3><table border='1'>" + h + "</table></body></html>";
