@@ -107,6 +107,8 @@ input.num{width:220px;font-size:1.3em;font-weight:800;text-align:right;border:2p
 .ticks button.sel i{background:var(--navy);border-color:var(--navy)}
 .telexhelp{font-size:.75em;color:var(--mut);background:#f6f9fd;border-radius:10px;padding:6px 10px;margin-top:8px}
 .telexhelp b{color:var(--navy)}
+.xai{border:0;background:transparent;color:#c62828;font-weight:800;cursor:pointer;padding:0 4px;border-radius:6px;font-size:.9em;line-height:1}
+.xai:hover{background:#fdecec}
 .foot{display:flex;gap:12px;align-items:center;margin-top:16px}
 .foot .sp{flex:1}
 .review table{width:100%;border-collapse:collapse;margin:10px 0}
@@ -1155,7 +1157,7 @@ function renderTbl(){
   var list = students(de, lop), tl = ex.phan.filter(function(p){ return p.loai === "tl"; })[0];
   var tp = tnParts(ex);
   var h = "<tr><th>Lớp</th><th>STT</th><th class='l'>Họ và tên</th>" + tp.map(function(q){ return "<th>" + esc(q.nm) + "<br><span class='mini'>/" + fmtD(q.max) + "</span></th>"; }).join("");
-  if(tl) h += "<th>Tự luận<br><span class='mini'>máy chấm</span></th><th style='background:#f6ece4'>🟠 Claude<br><span class='mini'>phần viết</span></th><th style='background:#e6eefc'>🔷 Gemini<br><span class='mini'>phần viết</span></th><th style='background:#e7f6ec'>🤝 Thống nhất<br><span class='mini'>phần viết</span></th>";
+  if(tl) h += "<th>Tự luận<br><span class='mini'>máy chấm</span></th><th style='background:#f6ece4'>🟠 Claude <button class='xai' data-xai='claude' title='Xoá điểm Claude của tất cả bài đang hiện'>✕</button><br><span class='mini'>phần viết</span></th><th style='background:#e6eefc'>🔷 Gemini <button class='xai' data-xai='gemini' title='Xoá điểm Gemini của tất cả bài đang hiện'>✕</button><br><span class='mini'>phần viết</span></th><th style='background:#e7f6ec'>🤝 Thống nhất<br><span class='mini'>phần viết</span></th>";
   h += "<th>Tổng<br><span class='mini'>/10</span></th><th>Trạng thái</th><th>Rời bài</th></tr>";
   var nk = 0, nw = 0, nl = 0, nr = 0;
   list.forEach(function(st, i){
@@ -1163,7 +1165,7 @@ function renderTbl(){
     h += "<tr class='row' data-i='" + i + "'><td>" + esc(st.b.lop) + "</td><td>" + st.b.stt + "</td><td class='l'>" + esc(st.b.ten) + (st.b.lan > 1 ? " <span class='mini'>(nộp " + st.b.lan + " lần)</span>" : "") + "</td>" + tp.map(function(q){ return "<td>" + fmtD(f.p[q.k]) + "</td>"; }).join("");
     if(tl){
       var mayTL = 0; Object.keys(st.b.may.it).forEach(function(k){ var x = st.b.may.it[k]; if(x.phan === "III" && x.sure) mayTL += f.it[k].d; });
-      var aiO = function(w){ var a = f.ai[w]; return !f.nViet ? "–" : !a.n ? "<span class='mut'>chưa chấm</span>" : fmtD(a.s) + (a.n < f.nViet ? " <span class='mini'>(" + a.n + "/" + f.nViet + " ý)</span>" : ""); };
+      var aiO = function(w){ var a = f.ai[w]; return !f.nViet ? "–" : !a.n ? "<span class='mut'>chưa chấm</span>" : fmtD(a.s) + (a.n < f.nViet ? " <span class='mini'>(" + a.n + "/" + f.nViet + " ý)</span>" : "") + " <button class='xai' data-xai='" + w + "' data-i='" + i + "' title='Xoá điểm " + (w === "claude" ? "Claude" : "Gemini") + " của em này'>✕</button>"; };
       h += "<td>" + fmtD(mayTL) + "</td><td style='background:#fbf6f1'>" + aiO("claude") + "</td><td style='background:#f3f7fd'>" + aiO("gemini") + "</td>"
         + "<td style='background:#f2faf4'>" + (!f.nViet ? "–" : f.locked ? (function(){ var m = khacChot(st, f); return m ? "<b>" + fmtD(m.tn) + "</b><br><span class='mini' style='color:#c62828'>đã chốt " + fmtD(f.p.III - mayTL) + " – khác!</span>" : fmtD(f.p.III - mayTL); })() : f.chua ? (f.lech ? "<b style='color:#c62828'>⚖️ " + f.lech + " ý lệch</b>" : "<span class='mut'>chờ đủ 2 AI</span>") : "<b>" + fmtD(f.tn) + "</b>") + "</td>";
     }
@@ -1177,7 +1179,37 @@ function renderTbl(){
   var nKhac = list.filter(function(st){ return khacChot(st, finalOf(st)); }).length;
   if(nKhac) $("cSum").innerHTML += " · <b style='color:#c62828'>" + nKhac + " bài đã chốt nhưng khác điểm thống nhất mới</b> (bấm ✅ Chốt để chốt lại)";
 }
-$("cTbl").addEventListener("click", function(e){ var t = e.target.closest("[data-tai]"); if(t){ e.stopPropagation(); taiBai([GV.list[+t.dataset.tai]], "mot"); return; } var r = e.target.closest("tr.row"); if(r) openGrade(+r.dataset.i); });
+/* xoá điểm chấm của một AI: nút ✕ ở tiêu đề cột (cả bảng) hoặc cạnh điểm (một em) */
+function xoaDiemAI(w, ds){
+  var ten = w === "claude" ? "Claude" : "Gemini", n = 0;
+  ds.forEach(function(st){ var A = GV.ai[st.b.phien]; if(!A) return;
+    Object.keys(A).forEach(function(k){ if(A[k][w]){ delete A[k][w]; n++; } if(A[k].gv && /^TRU_/.test(k) === false) delete A[k].gv; if(!A[k].claude && !A[k].gemini && !A[k].gv) delete A[k]; }); });
+  luuAI(); renderTbl();
+  toast(n ? "🗑️ Đã xoá " + n + " điểm của " + ten + (ds.length > 1 ? " (" + ds.length + " bài)" : " của em " + ds[0].b.ten) + "." + (GV.motAI ? " Đang chốt theo điểm của một AI." : "") : "Không có điểm " + ten + " nào để xoá.");
+}
+function xoaDlg(w, ds){
+  var ten = w === "claude" ? "Claude" : "Gemini", khac = w === "claude" ? "Gemini" : "Claude";
+  var nChot = ds.filter(function(st){ return finalOf(st).locked; }).length;
+  dlg("<h2>🗑️ Xoá điểm " + (w === "claude" ? "🟠 " : "🔷 ") + ten + "</h2><p>" + (ds.length > 1 ? "Xoá toàn bộ điểm " + ten + " của <b>" + ds.length + "</b> bài đang hiện trong bảng." : "Xoá điểm " + ten + " của bài em <b>" + esc(ds[0].b.ten) + "</b>.") + " Điểm của " + khac + " không bị ảnh hưởng.</p>"
+    + (nChot ? "<label style='display:flex;gap:8px;align-items:flex-start;margin:8px 0'><input type='checkbox' id='xdBo' checked> <span>Bỏ chốt <b>" + nChot + "</b> bài đã chốt để chấm lại <span class='mini'>(nếu không, bài đã chốt vẫn giữ điểm chốt cũ)</span></span></label>" : "")
+    + "<label style='display:flex;gap:8px;align-items:flex-start;margin:8px 0'><input type='checkbox' id='xdMot'" + (GV.motAI ? " checked" : "") + "> <span>Không dùng " + ten + " nữa: <b>chốt theo điểm của " + khac + "</b> <span class='mini'>(bật chế độ “Chỉ dùng 1 AI chấm”; ý nào " + khac + " đã chấm sẽ chốt được ngay)</span></span></label>"
+    + "<p class='mini'>Muốn " + ten + " chấm lại: sau khi xoá, bấm 📤 Xuất bài tự luận rồi 📥 Nhập điểm " + ten + ".</p>"
+    + "<div class='foot'><div class='sp'></div><button class='btn ghost' onclick='dlgClose()'>Huỷ</button><button class='btn org' id='xdGo' style='background:#c62828'>🗑️ Xoá điểm " + ten + "</button></div>");
+  $("xdGo").onclick = function(){
+    this.disabled = true;
+    var bo = $("xdBo") && $("xdBo").checked, mot = $("xdMot").checked;
+    if(mot !== GV.motAI){ GV.motAI = mot; $("cMot").checked = mot; sset("dk_mot_ai", mot); IDB.set("dk_mot_ai", mot); }
+    xoaDiemAI(w, ds);
+    if(bo){ var dc = ds.filter(function(st){ return finalOf(st).locked; }); if(dc.length) boChot(dc, false); else dlgClose(); } else dlgClose();
+  };
+}
+$("cTbl").addEventListener("click", function(e){
+  var x = e.target.closest("[data-xai]");
+  if(x){ e.stopPropagation(); var w = x.dataset.xai, ten = w === "claude" ? "Claude" : "Gemini";
+    var ds = x.dataset.i != null ? [GV.list[+x.dataset.i]] : (GV.list || []);
+    if(ds.length) xoaDlg(w, ds);
+    return; }
+  var t = e.target.closest("[data-tai]"); if(t){ e.stopPropagation(); taiBai([GV.list[+t.dataset.tai]], "mot"); return; } var r = e.target.closest("tr.row"); if(r) openGrade(+r.dataset.i); });
 
 /* ---------- màn hình chấm 1 bài ---------- */
 function highlight(text, groups){
