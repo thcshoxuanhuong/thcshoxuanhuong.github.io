@@ -1481,6 +1481,14 @@ function nhapAI(only){
     st.textContent = ok.length ? "✅ đã ghi nhận " + ok.length + " điểm" + (bad ? " (bỏ " + bad + " dòng lỗi/bị cắt)" : "") + (nTru ? " · " + nTru + " bài bị trừ trình bày" : "") : "chưa có điểm hợp lệ";
     if(thieu){ st.textContent += " · còn thiếu " + thieu + " ý"; st.title = "AI chưa trả lời hết. Gõ “tiếp tục” cho AI, sao chép phần trả lời tiếp theo rồi dán NỐI vào cuối ô này."; }
     upd();
+    if(ok.length) luuNgay(w);   /* lưu NGAY khi đọc được – không phụ thuộc nút Chấp nhận */
+  }
+  function luuNgay(w){
+    var n = 0;
+    (got[w] || []).forEach(function(x){ var A = ((GV.ai[x.ma] = GV.ai[x.ma] || {})[x.cau] = GV.ai[x.ma][x.cau] || {}); A[w] = x.t ? { t: x.t, ly: x.ly } : { d: x.d, ly: x.ly }; if(A.gv && !x.t) delete A.gv; n++; });
+    luuAI(); try{ renderTbl(); }catch(e){ console.error(e); }
+    var st = $("imSt_" + w); if(st && n) st.textContent += " · ĐÃ LƯU vào bảng";
+    return n;
   }
   [only].forEach(function(w){
     var t = $("imTx_" + w);
@@ -1490,9 +1498,8 @@ function nhapAI(only){
   });
   setTimeout(function(){ $("imTx_" + only).focus(); }, 50);
   $("imOk").onclick = function(){
-    var n = 0;
-    [only].forEach(function(w){ (got[w] || []).forEach(function(x){ var A = ((GV.ai[x.ma] = GV.ai[x.ma] || {})[x.cau] = GV.ai[x.ma][x.cau] || {}); A[w] = x.t ? { t: x.t, ly: x.ly } : { d: x.d, ly: x.ly }; if(A.gv && !x.t) delete A.gv; n++; }); });
-    luuAI(); dlgClose(); renderTbl();
+    var n = luuNgay(only);
+    dlgClose(); renderTbl();
     var dong = 0, lech = 0;
     Object.keys(GV.ai).forEach(function(m){ Object.keys(GV.ai[m]).forEach(function(k){ if(/^(TRU_|TB$)/.test(k)) return; var p = aiPick(GV.ai[m][k]); if(p && p.n === 2){ if(p.ok) dong++; else lech++; } }); });
     toast("✅ Đã nhận " + n + " điểm của " + (only === "claude" ? "Claude" : "Gemini") + ". " + (GV.motAI && !(dong + lech) ? "Đang dùng chế độ 1 AI – có thể bấm ✅ Chốt ngay" : dong + lech ? dong + " ý hai AI thống nhất" + (lech ? ", " + lech + " ý lệch từ 0,75 điểm – bấm ⚖️ để thầy thống nhất" : "") : "Chờ nhập điểm của " + (only === "claude" ? "Gemini" : "Claude") + " để thống nhất") + ".");
